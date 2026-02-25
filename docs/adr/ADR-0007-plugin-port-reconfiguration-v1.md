@@ -9,19 +9,28 @@
 本ADRは、port変更を安全に適用するための契約を定義する。
 
 ゼロコンフィグ方針のため、hostは固定 (`127.0.0.1`) とし、v1で可変にするのはportのみとする。
-PluginはWebSocketクライアントとして、指定された `server_port` へ接続する。
+PluginはWebSocketクライアントとして、指定された `port` へ接続する。
 
 ## Decision
-1. Unity Pluginは接続先 `server_port` のランタイム変更をサポートする。
-2. 適用モードはv1で `immediate` を採用する（変更後すぐ切替）。
-3. 設定永続化は「新portへの接続成功後」に行う。
-4. 切替失敗時は旧portへ自動ロールバックする。
-5. 再設定操作は同時実行不可とし、排他制御する。
+1. Unity Pluginのport変更は `Unity MCP Settings` EditorWindow から実行する。
+2. 設定の正本は `ScriptableSingleton`（`ProjectSettings/UnityMcpPluginSettings.asset`）とする。
+3. 適用モードはv1で `immediate` を採用する（変更後すぐ切替）。
+4. 設定永続化は「新portへの接続成功後」に行う。
+5. 切替失敗時は旧portへ自動ロールバックする。
+6. 再設定操作は同時実行不可とし、排他制御する。
+7. 後方互換運用は行わない（`UserSettings` 旧設定の読込/移行なし）。
 
-## API Contract (Plugin Internal)
-1. `set_server_port(port, apply_mode="immediate") -> ReconfigureResult`
-2. `get_server_port() -> int`
-3. `test_server_port(port, timeout_ms) -> TestResult`
+## EditorWindow Contract
+1. UI名: `Unity MCP Settings`
+2. 編集項目: `port`
+3. 操作: `Apply`
+4. `Apply` は入力値検証後に reconfigure フローを開始する。
+5. 成功時は `ScriptableSingleton.Save(true)` を実行して永続化する。
+6. 失敗時はUIにエラーを表示し、設定永続化を行わない。
+
+## Internal Contract (Plugin)
+1. `apply_port_change(port, apply_mode="immediate") -> ReconfigureResult`
+2. `get_active_port() -> int`
 
 `ReconfigureResult`:
 1. `status`: `applied | rolled_back | failed`
@@ -41,7 +50,7 @@ PluginはWebSocketクライアントとして、指定された `server_port` �
    - `hello`
    - `capability`
    - 現在の `editor_status`
-5. すべて成功したら新portを永続化し、`status=applied` で完了する。
+5. すべて成功したら設定を永続化し、`status=applied` で完了する。
 
 ## Rollback Procedure
 1. 新port接続に失敗した場合、旧portへ再接続を試行する。
@@ -65,7 +74,7 @@ PluginはWebSocketクライアントとして、指定された `server_port` �
 2. `running` 要求は `request_reconnect_wait_ms` 内に同一Editorへ再接続できれば継続し、超過時は `ERR_RECONNECT_TIMEOUT` で失敗する。
 3. `running` 要求が `ERR_RECONNECT_TIMEOUT` で終了した場合、`execution_guarantee` を返す実装では `unknown` を設定する。
 4. `queued/waiting_editor_ready` 要求は接続復帰後にFIFOで再開する。
-5. reconfigure操作自体はPlugin内部操作であり、個別 `request_id` を要求しない。
+5. reconfigure操作はEditorWindow起点のPlugin内部操作であり、個別 `request_id` を要求しない。
 
 ## State Machine
 1. `connected`
@@ -91,17 +100,20 @@ PluginはWebSocketクライアントとして、指定された `server_port` �
 6. `request_id` (存在する場合)
 
 ## Persisted Setting (Plugin v1)
-```json
+```csharp
+[FilePath("ProjectSettings/UnityMcpPluginSettings.asset", FilePathAttribute.Location.ProjectFolder)]
+internal sealed class UnityMcpPluginSettings : ScriptableSingleton<UnityMcpPluginSettings>
 {
-  "schema_version": 1,
-  "server_port": 8091
+    public int schemaVersion = 1;
+    public int port = 48091;
 }
 ```
 
 ## Consequences
-1. port変更時の挙動が deterministic になり、運用事故を減らせる。
+1. port変更の操作点がEditorWindowに統一され、利用手順が明確になる。
 2. 失敗時に自動ロールバックできるため、接続喪失時間を短くできる。
 3. 追加の状態遷移と排他制御が必要になり、Plugin実装はやや複雑化する。
+4. 互換性を持たないため、旧設定資産は再利用できない。
 
 ## Non-Goals (v1)
 1. 複数endpointの同時接続

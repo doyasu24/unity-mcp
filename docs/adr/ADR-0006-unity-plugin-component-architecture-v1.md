@@ -13,11 +13,12 @@ ADR-0001〜0005でMCP Server側設計を確定した。
 2. WebSocket通信のみ
 3. compile/reload状態をMCPへ通知
 4. 実行契約（sync/job, cancel）に応答可能
+5. project-scope設定としてportをチーム共有可能
 
 ## Decision
 Unity Pluginを以下のコンポーネントで構成する。
 
-1. `PluginConfig`
+1. `PluginSettingsStore` (`ScriptableSingleton`)
 2. `BridgeConnection`
 3. `BridgeLifecycle`
 4. `EditorStatePublisher`
@@ -27,12 +28,14 @@ Unity Pluginを以下のコンポーネントで構成する。
 8. `CancelRegistry`
 9. `CapabilityPublisher`
 10. `PluginLogger`
-11. PluginはWebSocketクライアントとしてMCP Server（listener）へ接続する。
+11. `PluginSettingsWindow` (`EditorWindow`)
+12. PluginはWebSocketクライアントとしてMCP Server（listener）へ接続する。
 
 ## Component Responsibilities
-### 1) PluginConfig
-1. 接続先portを保持する。
-2. Editor設定変更時に `BridgeConnection` を再初期化する。
+### 1) PluginSettingsStore (`ScriptableSingleton`)
+1. `ProjectSettings/UnityMcpPluginSettings.asset` を正本として設定を保持する。
+2. `schemaVersion` / `port` を提供する。
+3. `PluginSettingsWindow` からの保存要求で `Save(true)` を実行する。
 
 ### 2) BridgeConnection
 1. MCP Server待受portへのWebSocketクライアント接続（connect/send/receive/close）を担当する。
@@ -75,6 +78,11 @@ Unity Pluginを以下のコンポーネントで構成する。
 1. `request_id/client_request_id/job_id` をログ相関キーとして出力する。
 2. compile/reload遷移、接続断、再接続、実行失敗を監査可能にする。
 
+### 11) PluginSettingsWindow (`EditorWindow`)
+1. `Unity MCP Settings` UIで `port` を編集可能にする。
+2. `Apply` で値検証と接続切替を実行する。
+3. 接続切替成功時のみ `PluginSettingsStore` へ永続化する。
+
 ## Lifecycle Integration
 1. `Editor起動完了` -> WebSocket接続開始 -> `hello(state=ready)` 送信
 2. `compile開始` -> `editor_status(compiling)` 送信
@@ -105,11 +113,13 @@ Unity Pluginを以下のコンポーネントで構成する。
 4. cancel対象種別が契約外 -> `ERR_CANCEL_NOT_SUPPORTED`
 5. cancel失敗 -> `ERR_CANCEL_REJECTED`
 
-## Configuration Schema (Plugin v1)
-```json
+## Configuration Storage (Plugin v1)
+```csharp
+[FilePath("ProjectSettings/UnityMcpPluginSettings.asset", FilePathAttribute.Location.ProjectFolder)]
+internal sealed class UnityMcpPluginSettings : ScriptableSingleton<UnityMcpPluginSettings>
 {
-  "schema_version": 1,
-  "server_port": 8091
+    public int schemaVersion = 1;
+    public int port = 48091;
 }
 ```
 

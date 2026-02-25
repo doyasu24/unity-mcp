@@ -40,7 +40,7 @@ ADR-0001〜0007で、構成・再接続・実行契約・Plugin再設定まで�
 4. 未知フィールドは受信側で無視してよい（forward compatibility）
 
 ## Connection Sequence (v1)
-1. PluginがServerの待受portへ接続する（Server側 `unity_ws_port` / Plugin側 `server_port`）。
+1. PluginがServerの待受 `port` へ接続する（Server/Pluginで同一値）。
 2. Pluginが `hello(plugin_version, state)` を送信する。
 3. Serverが `hello(server_version)` を返す。
 4. Serverが `capability` を送信する。

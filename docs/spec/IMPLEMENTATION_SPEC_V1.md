@@ -1,7 +1,7 @@
 # Unity MCP 実装仕様書 v1.0（初期実装）
 
 - Status: Draft (Implementation Baseline)
-- Date: 2026-02-24
+- Date: 2026-02-25
 - Source: ADR-0001 〜 ADR-0013
 
 ## 0. 目的
@@ -20,10 +20,11 @@
 ## 1. 実装スコープ
 ### 1.1 In Scope (v1.0)
 1. `1 Editor = 1 MCP Server`
-2. Unity接続はWebSocketのみ
-3. `waiting_editor` / `ready` / `compiling` / `reloading` を考慮した実行制御
-4. `sync` + `job` 実行モデル
-5. 初期公開tool（5個）
+2. MCP endpointは `Streamable HTTP` (`/mcp`) で提供する
+3. Unity接続はWebSocket (`/unity`) のみ
+4. `waiting_editor` / `ready` / `compiling` / `reloading` を考慮した実行制御
+5. `sync` + `job` 実行モデル
+6. 初期公開tool（5個）
    - `read_console` (sync)
    - `get_editor_state` (sync)
    - `run_tests` (job, supports_cancel=true)
@@ -41,41 +42,47 @@
 ### 2.1 言語・ランタイム（実装方針）
 1. Server: TypeScript (Node.js 20+)
 2. MCP: `@modelcontextprotocol/sdk`
-3. Unity橋渡し: `ws` (WebSocket)
-4. バリデーション: `zod`（推奨）
+3. MCP endpoint transport: `Streamable HTTP`
+4. Unity橋渡し: `ws` (WebSocket)
+5. バリデーション: `zod`（推奨）
 
 ### 2.2 プロセストポロジ
-1. `Unity Editor A <-> MCP Server A`
-2. 1プロセス1Editor固定バインド（port一致）
-3. 接続方向は「Plugin(client) -> MCP Server(listener)」で固定
+1. `MCP Client <-> MCP Server (/mcp over HTTP)`
+2. `Unity Editor <-> MCP Server (/unity over WebSocket)`
+3. 1プロセス1Editor固定バインド（port一致）
+4. 単一HTTP listener上で `/mcp` と `/unity` を同居させる
+5. Unity接続方向は「Plugin(client) -> MCP Server(listener)」で固定
 
 ## 3. コンポーネント責務（Server）
 ADR-0005を実装単位に落とし込む。
 
 1. `ConfigLoader`
-   - `unity_ws_port` を読込・検証
-2. `McpEndpointAdapter`
-   - MCP tool呼び出しを内部リクエストへ変換
-3. `RequestValidator`
+   - CLI `--port` を読込・検証（`/mcp` と `/unity` の共通listen port）
+2. `HttpHost`
+   - `127.0.0.1:{port}` でHTTP listenerを起動
+   - `/mcp` ルートと `/unity` upgrade をルーティング
+3. `McpEndpointAdapter`
+   - `/mcp` 経由のMCP tool呼び出しを内部リクエストへ変換
+4. `RequestValidator`
    - tool存在・引数・timeout上限・`client_request_id` の形式要件を検証
-4. `RequestScheduler`
+5. `RequestScheduler`
    - Unity往復要求を単一FIFOキューへ投入
    - v1では `get_job_status/cancel_job` を含む全要求を同一キューで順序制御する
-5. `ExecutionCoordinator`
+6. `ExecutionCoordinator`
    - `sync/job` 実行分岐、待機、timeout、cancelを統合制御
    - 制御toolは `JobManager/CancelManager` へ委譲
-6. `UnityBridgeClient`
-   - Server側WebSocket待受とPluginセッション管理
+7. `UnityBridgeClient`
+   - `/unity` upgrade経由のPlugin WebSocketセッション管理
    - 送受信 (`hello/editor_status/ping/pong/result/submit_job_result/job_status/cancel_result`)
-7. `ReconnectController`
+8. `ReconnectController`
    - 切断後の再接続待機ウィンドウ管理（Plugin再接続前提）
-8. `EditorStateTracker`
+9. `EditorStateTracker`
    - `ready/compiling/reloading` と `seq` 管理
-9. `JobManager`
+10. `JobManager`
    - `job_id` 発行、job状態管理（非永続）
-10. `CancelManager`
+11. `CancelManager`
    - cancel転送と結果整形
-11. `Logger`
+12. `Logger`
    - `request_id/client_request_id/job_id` 相関ログ
 
 ### 3.1 コンポーネント間エラー伝播
@@ -86,47 +93,51 @@ ADR-0005を実装単位に落とし込む。
 5. 予期しない例外は最上位で捕捉し、`ERR_UNITY_EXECUTION` または `ERR_INVALID_RESPONSE` に正規化する。
 
 ## 4. 設定仕様
-### 4.1 ファイル配置（いずれも任意）
-1. Server: `./unity-mcp.server.json`
-2. Plugin: `UserSettings/UnityMcpPluginSettings.json`
+### 4.1 ファイル配置（Pluginはproject-scope）
+1. Plugin: `ProjectSettings/UnityMcpPluginSettings.asset`（`ScriptableSingleton`）
+2. Serverは設定ファイルを使わず、起動時引数で指定する。
 
 ### 4.2 スキーマ
 Server:
-```json
-{
-  "schema_version": 1,
-  "unity_ws_port": 8091
-}
-```
+1. 起動時引数 `--port` で指定する（任意）。
+2. 未指定時は `48091` を使う。
+
 Plugin:
-```json
+```csharp
+[FilePath("ProjectSettings/UnityMcpPluginSettings.asset", FilePathAttribute.Location.ProjectFolder)]
+internal sealed class UnityMcpPluginSettings : ScriptableSingleton<UnityMcpPluginSettings>
 {
-  "schema_version": 1,
-  "server_port": 8091
+    public int schemaVersion = 1;
+    public int port = 48091;
 }
 ```
+Note:
+1. Plugin `port` は Server `port` と同値に設定する。
+2. Plugin設定は `Unity MCP Settings` EditorWindow で変更する。
+3. Plugin設定は project-scope として扱い、設定ファイル差分をコミット対象とする。
+4. 互換運用は行わず、`UserSettings` 旧設定の読み込み/移行はしない。
 
 ### 4.3 優先順位
 Server:
-1. CLI `--unity-ws-port`
-2. `unity-mcp.server.json`
-3. 既定値 `8091`
+1. CLI `--port`
+2. 既定値 `48091`
 
 Plugin:
-1. Runtime API変更
-2. `UserSettings/UnityMcpPluginSettings.json`
-3. 既定値 `8091`
+1. EditorWindowで適用済みの `ScriptableSingleton` メモリ値
+2. `ProjectSettings/UnityMcpPluginSettings.asset`
+3. 既定値 `48091`
 
 ### 4.4 検証失敗時
-1. `ERR_CONFIG_PARSE` -> 起動停止
-2. `ERR_CONFIG_VALIDATION` -> 起動停止
-3. `ERR_CONFIG_SCHEMA_VERSION` -> 起動停止
+1. Server: `--port` が不正な場合は `ERR_CONFIG_VALIDATION` で起動停止。
+2. Plugin: 設定アセットの読込/検証失敗（`schemaVersion`/`port`）時は初期化停止。
 
 ### 4.5 運用制約（v1）
 1. マルチEditor運用時は各インスタンスで異なるportを手動設定する。
-2. 既定値 `8091` は単一Editor運用向けであり、複数同時起動時は競合する。
+2. 既定値 `48091` は単一Editor運用向けであり、複数同時起動時は競合する。
 3. `host=127.0.0.1` 固定のため、Server/Editorが同一ネットワーク名前空間にある前提。
 4. Docker/WSL2等の分離名前空間はv1標準サポート対象外。
+5. `/mcp` と `/unity` は同一portで提供し、pathで識別する。
+6. Pluginのport変更は `ProjectSettings/UnityMcpPluginSettings.asset` に保存し、チーム共有する。
 
 ## 5. ライフサイクルと状態
 ### 5.1 Server状態
@@ -143,10 +154,10 @@ Plugin:
 
 ### 5.3 起動シーケンス
 1. Server起動
-2. 設定読込・検証
-3. MCP endpoint公開
-4. Unity Plugin向けWebSocket待受開始
-5. 接続成立まで `waiting_editor`
+2. CLI引数 `--port` 読込・検証
+3. 単一HTTP listener (`127.0.0.1:{port}`) を起動
+4. `/mcp` 公開と `/unity` upgrade受理を開始
+5. Unity接続成立まで `waiting_editor`
 6. `hello` 交換成功で `ready`
 
 ### 5.4 `waiting_editor` 受理ポリシー
@@ -164,13 +175,19 @@ Plugin:
 4. v1では専用shutdownメッセージは使わず、接続クローズで通知
 
 ### 5.6 Plugin Port Reconfigure時の要求扱い
-1. Pluginのport再設定による切断は、Server側では通常の切断イベントとして扱う。
+1. `Unity MCP Settings` EditorWindow でのport再設定による切断は、Server側では通常の切断イベントとして扱う。
 2. `running` 要求は `request_reconnect_wait_ms` 以内の再接続復帰で継続し、超過時は `ERR_RECONNECT_TIMEOUT` で終了する。
 3. 上記失敗時に `execution_guarantee` を返す実装では `unknown` を設定する。
 4. `queued/waiting_editor_ready` 要求は接続復帰後にFIFOで再開する。
 
-## 6. 通信仕様（Unity Plugin <-> Server）
-### 6.1 共通Envelope
+## 6. 通信仕様
+### 6.0 MCP endpoint（Claude/Codex <-> Server）
+1. Transportは `Streamable HTTP` を採用する。
+2. Endpointは `http://127.0.0.1:{port}/mcp` とする。
+3. `/mcp` と `/unity` は同一listener上で提供する。
+4. v1運用モードではMCPクライアント接続に `stdio` を使わない。
+
+### 6.1 共通Envelope（Unity Plugin <-> Server）
 ```json
 {
   "type": "string",
@@ -191,7 +208,7 @@ Plugin:
 9. `error`
 
 ### 6.3 接続シーケンス
-1. Pluginが `server_port` へ接続
+1. Pluginが `ws://127.0.0.1:{port}/unity` へ接続
 2. Plugin -> Server: `hello(plugin_version, state)`
 3. Server -> Plugin: `hello(server_version)`
 4. Server -> Plugin: `capability`
@@ -421,6 +438,8 @@ Rules:
 8. `compile_grace_timeout_ms = 60000`
 9. `queue_max_size = 32`
 10. `max_message_bytes = 1048576`
+11. `mcp_http_path = /mcp`
+12. `unity_ws_path = /unity`
 
 ## 11. ログ要件
 1. すべての要求に `request_id`
@@ -442,9 +461,11 @@ Rules:
 4. `run_tests` submit->status->完了
 5. `cancel_job` (`cancelled|cancel_requested|rejected`)
 6. compile/reload中の待機復帰
+7. `POST /mcp` で initialize/listTools/callTool が成功
+8. 同一port上で `/mcp` と `/unity` が共存動作
 
 ## 13. 実装フェーズ分割
-1. Phase 1: Server skeleton + config + state machine + wire
+1. Phase 1: Server skeleton + single HTTP host (`/mcp` + `/unity`) + config + state machine + wire
 2. Phase 2: `get_editor_state` / `read_console`
 3. Phase 3: `run_tests` + `get_job_status` + `cancel_job`
 4. Phase 4 (Deferred): error contract strict化 + test整備
@@ -455,6 +476,8 @@ Rules:
 3. `cancel` 競合で終端状態が二重確定しない
 4. `ERR_*` と `code/message` の返却契約が一致している
 5. 設定不正時に必ず起動停止する
+6. `http://127.0.0.1:{port}/mcp` でMCP登録・呼び出し可能
+7. `ws://127.0.0.1:{port}/unity` でUnity接続可能
 
 ## 15. 実装TODO（Deferred）
 1. `client_request_id` のサーバー側dedupeを有効化する（未完了重複拒否、完了結果再利用、TTL管理）。

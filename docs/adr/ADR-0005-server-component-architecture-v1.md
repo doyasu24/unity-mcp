@@ -130,11 +130,11 @@ MCP Serverを以下のコンポーネントで構成する。
 2. 全状態更新はNode.js単一イベントループで直列化する（v1でmutex分岐は採用しない）。
 3. `job_store/request_store/queue_store` の更新はイベントループ内の単一遷移関数経由でのみ行う。
 
-## Configuration Schema (v1)
+## Server Startup Config (v1)
 ```json
 {
   "schema_version": 1,
-  "unity_ws_port": 8091
+  "port": 48091
 }
 ```
 

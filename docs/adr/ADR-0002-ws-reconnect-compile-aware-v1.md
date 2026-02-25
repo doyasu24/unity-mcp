@@ -31,8 +31,8 @@ ADR-0001で `1 Editor = 1 MCP Server` を採用した。
    tool実行要求と応答に使用する。
 
 ## Connection Topology (v1)
-1. MCP Serverは `unity_ws_port` で待受する。
-2. Unity Pluginは `server_port` に接続する。
+1. MCP Serverは `port` で待受する（CLI `--port`）。
+2. Unity Pluginは同一 `port` に接続する。
 3. 切断時はPluginが指数バックオフで再接続を試行し、Serverは待受を継続する。
 
 ### Message Shapes (v1)
