@@ -127,8 +127,8 @@ MCP Serverを以下のコンポーネントで構成する。
 
 ## Concurrency Model
 1. Unity往復要求の同時実行数は `1`。
-2. 全状態更新はNode.js単一イベントループで直列化する（v1でmutex分岐は採用しない）。
-3. `job_store/request_store/queue_store` の更新はイベントループ内の単一遷移関数経由でのみ行う。
+2. 全状態更新は単一直列化コンテキストで処理する（v1でmutex分岐は採用しない）。
+3. `job_store/request_store/queue_store` の更新は単一遷移関数経由でのみ行う。
 
 ## Server Startup Config (v1)
 ```json

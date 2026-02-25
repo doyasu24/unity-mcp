@@ -40,11 +40,11 @@
 
 ## 2. 実装基盤
 ### 2.1 言語・ランタイム（実装方針）
-1. Server: TypeScript (Node.js 20+)
-2. MCP: `@modelcontextprotocol/sdk`
+1. Server: C# (.NET 8+)
+2. MCP: C# MCP SDK（採用版）
 3. MCP endpoint transport: `Streamable HTTP`
-4. Unity橋渡し: `ws` (WebSocket)
-5. バリデーション: `zod`（推奨）
+4. Unity橋渡し: ASP.NET Core WebSocket
+5. バリデーション: C#入力モデル検証（DataAnnotations等）
 
 ### 2.2 プロセストポロジ
 1. `MCP Client <-> MCP Server (/mcp over HTTP)`
@@ -250,7 +250,7 @@ Plugin:
 1. Unity往復要求の同時実行数は `1`
 2. キュー上限は `32`
 3. v1では `get_job_status/cancel_job` を含む全要求を同一キューで処理する
-4. 状態更新はNode.js単一イベントループで直列化し、mutex分岐は採用しない
+4. 状態更新は単一直列化コンテキストで処理し、mutex分岐は採用しない
 
 ### 7.4 raceルール
 1. 終端状態はCASで1回のみ確定
