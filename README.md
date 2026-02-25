@@ -22,17 +22,26 @@ graph LR
 ## Prerequisites
 
 - Unity Editor (Unity 6+ recommended)
-- Node.js 20+
+- .NET SDK 8+
 
 ## Quick Start
 
-1. Start the Unity MCP server with the default port (`48091`).
-2. Register the server in your MCP client:
+1. Install the Unity package.
+2. Set up a project-local `dotnet tool` version (pinned per project):
+   ```bash
+   dotnet new tool-manifest
+   dotnet tool install --local Doyasu24.UnityMcp.Tool --version 0.1.0
+   ```
+3. Start the Unity MCP server (default port: `48091`):
+   ```bash
+   dotnet tool run unity-mcp
+   ```
+4. Register the server in your MCP client:
    - Claude Code: follow `Claude Code Setup`.
    - Codex: follow `Codex Setup`.
-3. Open your Unity project and make sure the Unity MCP plugin is enabled.
-4. In your MCP client, call `get_editor_state` to verify the connection.
-5. Start using tools such as `read_console` and `run_tests`.
+5. Open your Unity project and make sure the Unity MCP plugin is enabled.
+6. In your MCP client, call `get_editor_state` to verify the connection.
+7. Start using tools such as `read_console` and `run_tests`.
 
 ### Install the Unity Package
 
@@ -70,8 +79,12 @@ Use this section only when you need a custom port.
 
 ### Server Port
 
-- Use `--port` when starting the server.
 - Default port: `48091`.
+- Use `--port` only when you need a non-default port.
+- Example:
+  ```bash
+  dotnet tool run unity-mcp --port 48092
+  ```
 
 ### Unity Plugin Settings
 
@@ -88,6 +101,18 @@ Rules:
 - `port` in Unity settings must match the server port.
 - The server runs on `127.0.0.1` (local machine).
 - This settings asset is project-scoped and should be committed to version control.
+
+## Tool Version Management (Project-Scoped)
+
+- Commit `.config/dotnet-tools.json` to version-control to pin the server version per project.
+- Team members should run:
+  ```bash
+  dotnet tool restore
+  ```
+- To update to a new pinned version:
+  ```bash
+  dotnet tool update --local Doyasu24.UnityMcp.Tool --version <NEXT_VERSION>
+  ```
 
 ## Using Multiple Unity Editors
 
