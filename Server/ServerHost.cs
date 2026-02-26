@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace UnityMcpServer;
 
@@ -41,6 +43,7 @@ internal static class ServerHost
     private static WebApplication BuildApplication(string[] args, ServerConfig config)
     {
         var builder = WebApplication.CreateBuilder(args);
+        ConfigureHostDefaults(builder);
 
         builder.WebHost.UseKestrel(options =>
         {
@@ -65,6 +68,16 @@ internal static class ServerHost
 
         MapEndpoints(app);
         return app;
+    }
+
+    internal static void ConfigureHostDefaults(WebApplicationBuilder builder)
+    {
+        builder.Services.Configure<HostOptions>(options =>
+        {
+            options.ShutdownTimeout = TimeSpan.FromMilliseconds(300);
+        });
+
+        builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
     }
 
     private static void ConfigureServices(IServiceCollection services, ServerConfig config)
@@ -95,6 +108,7 @@ internal static class ServerHost
     private static void RegisterLifetimeEvents(WebApplication app, ServerConfig config)
     {
         var runtimeState = app.Services.GetRequiredService<RuntimeState>();
+        var bridge = app.Services.GetRequiredService<UnityBridge>();
 
         app.Lifetime.ApplicationStarted.Register(() =>
         {
@@ -110,6 +124,7 @@ internal static class ServerHost
         app.Lifetime.ApplicationStopping.Register(() =>
         {
             runtimeState.SetServerState(ServerState.Stopping);
+            bridge.BeginShutdown();
             Logger.Info("Server stopping");
         });
 

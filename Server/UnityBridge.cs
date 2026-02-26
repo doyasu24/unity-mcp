@@ -38,13 +38,13 @@ internal sealed class UnityBridge
 
     private readonly RuntimeState _runtimeState;
     private readonly RequestScheduler _scheduler;
-    private readonly object _socketGate = new();
+    private readonly UnitySessionRegistry _sessionRegistry = new();
     private readonly ConcurrentDictionary<string, PendingRequest> _pendingRequests = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, JobRecord> _jobs = new(StringComparer.Ordinal);
 
-    private WebSocket? _socket;
     private CancellationTokenSource? _heartbeatCts;
     private long _lastPongUtcTicks;
+    private int _shutdownRequested;
 
     public UnityBridge(RuntimeState runtimeState, RequestScheduler scheduler)
     {
@@ -62,29 +62,64 @@ internal sealed class UnityBridge
         }
 
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
-
-        WebSocket? previousSocket;
-        lock (_socketGate)
-        {
-            previousSocket = _socket;
-            _socket = socket;
-            Interlocked.Exchange(ref _lastPongUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
-        }
-
-        if (previousSocket is not null)
-        {
-            await SafeCloseSocketAsync(previousSocket, WebSocketCloseStatus.NormalClosure, "superseded", CancellationToken.None);
-        }
-
-        Logger.Info("Unity websocket connected", ("remote", context.Connection.RemoteIpAddress?.ToString()));
+        _sessionRegistry.Register(socket);
 
         try
         {
             await ReceiveLoopAsync(socket, context.RequestAborted);
         }
+        catch (McpException ex) when (ex.Code == ErrorCodes.UnityDisconnected)
+        {
+            // reconnect race path: socket can close while processing hello/capability
+        }
+        catch (OperationCanceledException) when (IsShuttingDown())
+        {
+            // shutdown path
+        }
+        catch (Exception ex)
+        {
+            if (!IsShuttingDown())
+            {
+                Logger.Warn("Unity websocket session failed", ("error", ex.Message));
+            }
+        }
         finally
         {
             OnSocketClosed(socket);
+        }
+    }
+
+    public void BeginShutdown()
+    {
+        if (Interlocked.Exchange(ref _shutdownRequested, 1) != 0)
+        {
+            return;
+        }
+
+        StopHeartbeat();
+        FailPendingRequestsAsDisconnected();
+        _runtimeState.OnDisconnected();
+
+        var sockets = _sessionRegistry.DrainAll();
+        foreach (var socket in sockets)
+        {
+            try
+            {
+                socket.Abort();
+            }
+            catch
+            {
+                // no-op
+            }
+
+            try
+            {
+                socket.Dispose();
+            }
+            catch
+            {
+                // no-op
+            }
         }
     }
 
@@ -324,7 +359,14 @@ internal sealed class UnityBridge
         }
         catch (WebSocketException ex)
         {
-            Logger.Warn("Unity websocket receive error", ("error", ex.Message));
+            if (!IsShuttingDown() && !IsExpectedDisconnect(ex))
+            {
+                Logger.Warn("Unity websocket receive error", ("error", ex.Message));
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            // socket disposed during reconnect/shutdown
         }
         finally
         {
@@ -369,6 +411,13 @@ internal sealed class UnityBridge
         var type = JsonHelpers.GetString(message, "type");
         if (string.IsNullOrWhiteSpace(type))
         {
+            return;
+        }
+
+        if (!string.Equals(type, "hello", StringComparison.Ordinal) && !_sessionRegistry.IsActive(sourceSocket))
+        {
+            Logger.Warn("Received message from non-active Unity websocket", ("type", type));
+            await SafeCloseSocketAsync(sourceSocket, WebSocketCloseStatus.PolicyViolation, "inactive-session", cancellationToken);
             return;
         }
 
@@ -430,11 +479,31 @@ internal sealed class UnityBridge
 
     private async Task HandleHelloAsync(WebSocket socket, JsonObject message, CancellationToken cancellationToken)
     {
-        var pluginVersion = JsonHelpers.GetString(message, "plugin_version") ?? "unknown";
-        var initialState = WireState.ParseEditorState(JsonHelpers.GetString(message, "state"));
+        var promotion = _sessionRegistry.TryPromote(socket);
+        if (promotion == SessionPromotionResult.RejectedActiveExists)
+        {
+            await SendRawAsync(socket, new JsonObject
+            {
+                ["type"] = "error",
+                ["protocol_version"] = Constants.ProtocolVersion,
+                ["request_id"] = JsonHelpers.CloneNode(message["request_id"]),
+                ["error"] = new JsonObject
+                {
+                    ["code"] = ErrorCodes.InvalidRequest,
+                    ["message"] = "another Unity websocket session is already active",
+                },
+            }, cancellationToken);
 
-        _runtimeState.OnConnected(initialState);
-        StartHeartbeat(socket);
+            await SafeCloseSocketAsync(socket, WebSocketCloseStatus.PolicyViolation, "session-already-active", cancellationToken);
+            return;
+        }
+
+        if (promotion == SessionPromotionResult.UnknownSocket)
+        {
+            return;
+        }
+
+        var initialState = WireState.ParseEditorState(JsonHelpers.GetString(message, "state"));
 
         await SendRawAsync(socket, new JsonObject
         {
@@ -450,7 +519,12 @@ internal sealed class UnityBridge
             ["tools"] = ToolCatalog.BuildUnityCapabilityTools(),
         }, cancellationToken);
 
-        Logger.Info("Unity hello received", ("plugin_version", pluginVersion), ("editor_state", initialState.ToWire()));
+        if (promotion == SessionPromotionResult.Activated)
+        {
+            Interlocked.Exchange(ref _lastPongUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
+            _runtimeState.OnConnected(initialState);
+            StartHeartbeat(socket);
+        }
     }
 
     private void HandleEditorStatus(JsonObject message)
@@ -540,15 +614,13 @@ internal sealed class UnityBridge
 
     private WebSocket GetOpenSocketOrThrow()
     {
-        lock (_socketGate)
+        var socket = _sessionRegistry.GetActiveSocket();
+        if (socket is null)
         {
-            if (_socket is null || _socket.State != WebSocketState.Open)
-            {
-                throw new McpException(ErrorCodes.UnityDisconnected, "Unity websocket is not connected");
-            }
-
-            return _socket;
+            throw new McpException(ErrorCodes.UnityDisconnected, "Unity websocket is not connected");
         }
+
+        return socket;
     }
 
     private void StartHeartbeat(WebSocket socket)
@@ -617,23 +689,24 @@ internal sealed class UnityBridge
 
     private void OnSocketClosed(WebSocket closedSocket)
     {
-        var wasCurrent = false;
-        lock (_socketGate)
-        {
-            if (ReferenceEquals(_socket, closedSocket))
-            {
-                _socket = null;
-                wasCurrent = true;
-            }
-        }
-
-        if (!wasCurrent)
+        var removal = _sessionRegistry.Remove(closedSocket);
+        if (!removal.WasActive)
         {
             return;
         }
 
+        var wasConnected = _runtimeState.GetSnapshot().Connected;
         StopHeartbeat();
+        FailPendingRequestsAsDisconnected();
+        _runtimeState.OnDisconnected();
+        if (wasConnected && !IsShuttingDown())
+        {
+            Logger.Warn("Unity websocket disconnected");
+        }
+    }
 
+    private void FailPendingRequestsAsDisconnected()
+    {
         foreach (var (requestId, pending) in _pendingRequests)
         {
             if (_pendingRequests.TryRemove(requestId, out var removed))
@@ -644,9 +717,22 @@ internal sealed class UnityBridge
                 removed.Dispose();
             }
         }
+    }
 
-        _runtimeState.OnDisconnected();
-        Logger.Warn("Unity websocket disconnected");
+    private bool IsShuttingDown()
+    {
+        return Volatile.Read(ref _shutdownRequested) != 0;
+    }
+
+    private static bool IsExpectedDisconnect(WebSocketException ex)
+    {
+        if (ex.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely)
+        {
+            return true;
+        }
+
+        var message = ex.Message ?? string.Empty;
+        return message.IndexOf("without completing the close handshake", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     private void UpsertJob(string jobId, JobState state, JsonNode? result)

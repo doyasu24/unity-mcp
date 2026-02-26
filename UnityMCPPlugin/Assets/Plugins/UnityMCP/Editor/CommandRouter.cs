@@ -47,7 +47,7 @@ namespace UnityMcpPlugin
                     await HandleCancelAsync(message, cancellationToken);
                     return;
                 case "error":
-                    PluginLogger.Warn("Received error from server", ("payload", Payload.ToJson(message)));
+                    PluginLogger.DevWarn("Received error from server", ("payload", Payload.ToJson(message)));
                     return;
                 default:
                     var requestId = Payload.GetString(message, "request_id");
@@ -59,18 +59,18 @@ namespace UnityMcpPlugin
         private static void HandleServerHello(JsonElement message)
         {
             var serverVersion = Payload.GetString(message, "server_version") ?? "unknown";
-            PluginLogger.Info("Received server hello", ("server_version", serverVersion));
+            PluginLogger.DevInfo("Received server hello", ("server_version", serverVersion));
         }
 
         private static void HandleServerCapability(JsonElement message)
         {
             if (!Payload.TryGetArrayLength(message, "tools", out var count))
             {
-                PluginLogger.Info("Received capability without tools");
+                PluginLogger.DevInfo("Received capability without tools");
                 return;
             }
 
-            PluginLogger.Info("Received capability", ("tool_count", count));
+            PluginLogger.DevInfo("Received capability", ("tool_count", count));
         }
 
         private async Task HandleExecuteAsync(JsonElement message, CancellationToken cancellationToken)
@@ -87,7 +87,8 @@ namespace UnityMcpPlugin
 
             try
             {
-                var result = await MainThreadDispatcher.InvokeAsync(() => _commandExecutor.ExecuteSyncTool(toolName, parameters));
+                // Sync tools are pure in-memory reads and do not require Unity main thread APIs.
+                var result = _commandExecutor.ExecuteSyncTool(toolName, parameters);
                 await _sendMessageAsync(new
                 {
                     type = "result",

@@ -55,6 +55,11 @@ namespace UnityMcpPlugin
 
         private static void OnLogMessageReceived(string condition, string stackTrace, LogType type)
         {
+            if (PluginLogger.IsPluginLog(condition))
+            {
+                return;
+            }
+
             lock (Gate)
             {
                 Entries.Add(new ConsoleEntry(

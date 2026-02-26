@@ -19,7 +19,11 @@ namespace UnityMcpPlugin
                 runtime.Shutdown();
             };
 
-            EditorApplication.delayCall += () => runtime.PublishEditorState(EditorBridgeState.Ready);
+            EditorApplication.delayCall += () =>
+            {
+                PluginLogger.InitializeMainThreadState();
+                runtime.PublishEditorState(EditorBridgeState.Ready);
+            };
             EditorApplication.quitting += runtime.Shutdown;
         }
     }

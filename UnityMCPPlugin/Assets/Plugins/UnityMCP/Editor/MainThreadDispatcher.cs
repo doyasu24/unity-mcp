@@ -10,7 +10,7 @@ namespace UnityMcpPlugin
     {
         private static readonly ConcurrentQueue<Action> Queue = new();
 
-        private static int _mainThreadId;
+        private static int _mainThreadId = -1;
         private static bool _initialized;
 
         internal static void Initialize()
@@ -21,7 +21,7 @@ namespace UnityMcpPlugin
             }
 
             _initialized = true;
-            _mainThreadId = Thread.CurrentThread.ManagedThreadId;
+            _mainThreadId = -1;
             EditorApplication.update += Drain;
         }
 
@@ -43,7 +43,7 @@ namespace UnityMcpPlugin
 
         internal static Task<T> InvokeAsync<T>(Func<T> func)
         {
-            if (Thread.CurrentThread.ManagedThreadId == _mainThreadId)
+            if (_mainThreadId >= 0 && Thread.CurrentThread.ManagedThreadId == _mainThreadId)
             {
                 return Task.FromResult(func());
             }
@@ -66,6 +66,7 @@ namespace UnityMcpPlugin
 
         private static void Drain()
         {
+            _mainThreadId = Thread.CurrentThread.ManagedThreadId;
             while (Queue.TryDequeue(out var action))
             {
                 action();

@@ -8,6 +8,7 @@ namespace UnityMcpPlugin
     internal sealed class SettingsWindow : EditorWindow
     {
         private int _portInput;
+        private bool _detailedLogsEnabled;
         private string _status = string.Empty;
         private MessageType _statusType = MessageType.Info;
         private bool _isApplying;
@@ -16,12 +17,14 @@ namespace UnityMcpPlugin
         private static void OpenWindow()
         {
             var window = GetWindow<SettingsWindow>("Unity MCP Settings");
-            window.minSize = new Vector2(420f, 160f);
+            window.minSize = new Vector2(420f, 200f);
         }
 
         private void OnEnable()
         {
+            PluginLogger.InitializeMainThreadState();
             _portInput = PluginSettings.instance.port;
+            _detailedLogsEnabled = PluginLogger.GetDetailedLogsEnabled();
             _status = "Edit port and click Apply.";
             _statusType = MessageType.Info;
         }
@@ -34,6 +37,19 @@ namespace UnityMcpPlugin
             using (new EditorGUI.DisabledScope(_isApplying))
             {
                 _portInput = EditorGUILayout.IntField("Port", _portInput);
+            }
+
+            EditorGUILayout.Space();
+            EditorGUI.BeginChangeCheck();
+            var nextDetailedLogsEnabled = EditorGUILayout.ToggleLeft("Detailed MCP Logs (Local)", _detailedLogsEnabled);
+            if (EditorGUI.EndChangeCheck())
+            {
+                _detailedLogsEnabled = nextDetailedLogsEnabled;
+                PluginLogger.SetDetailedLogsEnabled(_detailedLogsEnabled);
+                _status = _detailedLogsEnabled
+                    ? "Detailed MCP logs are enabled for this local editor."
+                    : "Detailed MCP logs are disabled for this local editor.";
+                _statusType = MessageType.Info;
             }
 
             EditorGUILayout.Space();
@@ -51,6 +67,7 @@ namespace UnityMcpPlugin
                 if (GUILayout.Button("Reload", GUILayout.Height(28f)))
                 {
                     _portInput = PluginSettings.instance.port;
+                    _detailedLogsEnabled = PluginLogger.GetDetailedLogsEnabled();
                     _status = "Reloaded from settings asset.";
                     _statusType = MessageType.Info;
                 }

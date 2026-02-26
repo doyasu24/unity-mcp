@@ -213,6 +213,8 @@ Plugin:
 3. Server -> Plugin: `hello(server_version)`
 4. Server -> Plugin: `capability`
 5. heartbeatは Server `ping` -> Plugin `pong`
+6. Serverは `hello` 受信完了まで接続を `pending` 扱いとし、既存 `active` セッションを切断しない。
+7. 既存 `active` がある状態で別接続が `hello` を送信した場合、Serverは既存セッションを維持し、新規接続を拒否する。
 
 ### 6.4 フィールド命名
 1. 相関キーは `request_id`

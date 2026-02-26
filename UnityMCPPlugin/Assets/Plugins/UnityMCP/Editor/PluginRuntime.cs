@@ -1,4 +1,5 @@
 using System;
+using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -18,6 +19,7 @@ namespace UnityMcpPlugin
         private const int ReconfigureConnectTimeoutMs = 5000;
         private const int ReconfigureMaxAttempts = 3;
         private const int ReconfigureRetryIntervalMs = 200;
+        private const int ConnectivityWarningThrottleMs = 30000;
 
         private readonly object _gate = new();
         private readonly SemaphoreSlim _reconfigureLock = new(1, 1);
@@ -30,6 +32,9 @@ namespace UnityMcpPlugin
 
         private int _desiredPort;
         private int _activePort;
+        private int _consecutiveConnectFailures;
+        private bool _connectivityIssueAnnounced;
+        private DateTimeOffset _lastConnectivityWarningUtc;
 
         private bool _initialized;
         private bool _shuttingDown;
@@ -79,6 +84,9 @@ namespace UnityMcpPlugin
 
                 _desiredPort = settings.port;
                 _activePort = settings.port;
+                _consecutiveConnectFailures = 0;
+                _connectivityIssueAnnounced = false;
+                _lastConnectivityWarningUtc = DateTimeOffset.MinValue;
                 _shuttingDown = false;
 
                 LogBuffer.Initialize();
@@ -87,7 +95,7 @@ namespace UnityMcpPlugin
 
                 _initialized = true;
 
-                PluginLogger.Info("Unity MCP plugin initialized", ("port", _desiredPort));
+                PluginLogger.UserInfo("Unity MCP plugin initialized", ("port", _desiredPort));
             }
         }
 
@@ -110,10 +118,13 @@ namespace UnityMcpPlugin
             lock (_gate)
             {
                 _initialized = false;
+                _consecutiveConnectFailures = 0;
+                _connectivityIssueAnnounced = false;
+                _lastConnectivityWarningUtc = DateTimeOffset.MinValue;
                 _shuttingDown = false;
             }
 
-            PluginLogger.Info("Unity MCP plugin stopped");
+            PluginLogger.UserInfo("Unity MCP plugin stopped");
         }
 
         internal int GetActivePort()
@@ -158,7 +169,7 @@ namespace UnityMcpPlugin
                 return;
             }
 
-            PluginLogger.Info("Editor state updated", ("state", Wire.ToWireState(change.State)), ("seq", change.Seq));
+            PluginLogger.DevInfo("Editor state updated", ("state", Wire.ToWireState(change.State)), ("seq", change.Seq));
             _ = TrySendEditorStatusAsync(change.State, change.Seq);
         }
 
@@ -219,7 +230,7 @@ namespace UnityMcpPlugin
                         _activePort = newPort;
                     }
 
-                    PluginLogger.Info("Port reconfigure applied", ("old_port", oldPort), ("new_port", newPort));
+                    PluginLogger.UserInfo("Port reconfigure applied", ("old_port", oldPort), ("new_port", newPort));
                     return PortReconfigureResult.Applied(newPort);
                 }
 
@@ -242,14 +253,14 @@ namespace UnityMcpPlugin
                         _activePort = oldPort;
                     }
 
-                    PluginLogger.Warn("Port reconfigure rolled back", ("old_port", oldPort), ("new_port", newPort));
+                    PluginLogger.UserWarn("Port reconfigure rolled back", ("old_port", oldPort), ("new_port", newPort));
                     return PortReconfigureResult.RolledBack(
                         oldPort,
                         "ERR_RECONFIG_CONNECT_TIMEOUT",
                         "failed to connect to new port and rolled back to previous port");
                 }
 
-                PluginLogger.Error("Port reconfigure rollback failed", ("old_port", oldPort), ("new_port", newPort));
+                PluginLogger.UserError("Port reconfigure rollback failed", ("old_port", oldPort), ("new_port", newPort));
                 return PortReconfigureResult.Failed(
                     GetActivePort(),
                     "ERR_RECONFIG_ROLLBACK_FAILED",
@@ -274,9 +285,23 @@ namespace UnityMcpPlugin
 
             _editorStateTracker.ResetSequence();
             await SendHelloAsync(cancellationToken);
-            await SendCurrentEditorStatusAsync(cancellationToken);
 
-            PluginLogger.Info("Bridge connected", ("port", port), ("uri", $"ws://{Host}:{port}{UnityWsPath}"));
+            try
+            {
+                await SendCurrentEditorStatusAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                PluginLogger.DevWarn("Initial editor_status send failed", ("port", port), ("error", ex.Message));
+            }
+            var (hadConnectivityIssue, failedAttempts) = ResetConnectivityIssueTracking();
+
+            if (hadConnectivityIssue && failedAttempts > 1)
+            {
+                PluginLogger.UserInfo("Server connection restored", ("port", port), ("failed_attempts", failedAttempts));
+            }
+
+            PluginLogger.DevInfo("Bridge connected", ("port", port), ("uri", $"ws://{Host}:{port}{UnityWsPath}"));
         }
 
         private async Task OnIncomingTextMessageAsync(int port, string raw, CancellationToken cancellationToken)
@@ -286,19 +311,61 @@ namespace UnityMcpPlugin
 
         private void OnDisconnected(int port)
         {
-            PluginLogger.Warn("Bridge disconnected", ("port", port));
+            lock (_gate)
+            {
+                if (_shuttingDown)
+                {
+                    return;
+                }
+            }
+
+            PluginLogger.DevWarn("Bridge disconnected", ("port", port));
         }
 
         private void OnSessionError(int port, Exception ex)
         {
-            PluginLogger.Warn("Bridge session ended with error", ("port", port), ("error", ex.Message));
+            var offline = IsServerUnavailableError(ex);
+            var attempt = 0;
+            var shouldWarnUser = false;
+
+            lock (_gate)
+            {
+                if (_shuttingDown)
+                {
+                    return;
+                }
+
+                if (offline)
+                {
+                    _consecutiveConnectFailures += 1;
+                    attempt = _consecutiveConnectFailures;
+                    shouldWarnUser = ShouldEmitConnectivityWarningLocked();
+                    if (shouldWarnUser)
+                    {
+                        _connectivityIssueAnnounced = true;
+                    }
+                }
+            }
+
+            if (offline)
+            {
+                if (shouldWarnUser)
+                {
+                    PluginLogger.UserWarn("Server is not reachable. Retrying in background.", ("port", port));
+                }
+
+                PluginLogger.DevWarn("Bridge session ended with error", ("port", port), ("attempt", attempt), ("error", ex.Message));
+                return;
+            }
+
+            PluginLogger.DevWarn("Bridge session ended with error", ("port", port), ("error", ex.Message));
         }
 
         private async Task HandleIncomingMessageAsync(string raw, CancellationToken cancellationToken)
         {
             if (!Payload.TryParseDocument(raw, out var document))
             {
-                PluginLogger.Warn("Received invalid JSON message");
+                PluginLogger.DevWarn("Received invalid JSON message");
                 return;
             }
 
@@ -381,7 +448,7 @@ namespace UnityMcpPlugin
             }
             catch (Exception ex)
             {
-                PluginLogger.Warn("Failed to send editor_status", ("error", ex.Message), ("seq", seq));
+                PluginLogger.DevWarn("Failed to send editor_status", ("error", ex.Message), ("seq", seq));
             }
         }
 
@@ -431,6 +498,56 @@ namespace UnityMcpPlugin
         {
             var connected = _connectionManager.GetConnectedPort() > 0;
             return _editorStateTracker.Snapshot(connected);
+        }
+
+        private (bool HadConnectivityIssue, int FailedAttempts) ResetConnectivityIssueTracking()
+        {
+            lock (_gate)
+            {
+                var result = (_connectivityIssueAnnounced, _consecutiveConnectFailures);
+                _connectivityIssueAnnounced = false;
+                _consecutiveConnectFailures = 0;
+                return result;
+            }
+        }
+
+        private static bool IsServerUnavailableError(Exception ex)
+        {
+            for (var current = ex; current != null; current = current.InnerException)
+            {
+                if (current is WebSocketException or OperationCanceledException or TimeoutException)
+                {
+                    return true;
+                }
+
+                var message = current.Message ?? string.Empty;
+                if (message.IndexOf("Unable to connect", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    message.IndexOf("actively refused", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    message.IndexOf("connection refused", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    message.IndexOf("No connection could be made", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool ShouldEmitConnectivityWarningLocked()
+        {
+            if (_connectivityIssueAnnounced)
+            {
+                return false;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            if ((now - _lastConnectivityWarningUtc).TotalMilliseconds < ConnectivityWarningThrottleMs)
+            {
+                return false;
+            }
+
+            _lastConnectivityWarningUtc = now;
+            return true;
         }
     }
 }
