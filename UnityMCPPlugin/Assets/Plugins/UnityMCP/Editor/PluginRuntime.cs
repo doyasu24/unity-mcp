@@ -294,12 +294,8 @@ namespace UnityMcpPlugin
             {
                 PluginLogger.DevWarn("Initial editor_status send failed", ("port", port), ("error", ex.Message));
             }
-            var (hadConnectivityIssue, failedAttempts) = ResetConnectivityIssueTracking();
-
-            if (hadConnectivityIssue && failedAttempts > 1)
-            {
-                PluginLogger.UserInfo("Server connection restored", ("port", port), ("failed_attempts", failedAttempts));
-            }
+            ResetConnectivityIssueTracking();
+            PluginLogger.UserInfo("Connected to server", ("port", port));
 
             PluginLogger.DevInfo("Bridge connected", ("port", port), ("uri", $"ws://{Host}:{port}{UnityWsPath}"));
         }
@@ -351,7 +347,7 @@ namespace UnityMcpPlugin
             {
                 if (shouldWarnUser)
                 {
-                    PluginLogger.UserWarn("Server is not reachable. Retrying in background.", ("port", port));
+                    PluginLogger.UserWarn("Disconnected from server. Retrying in background.", ("port", port));
                 }
 
                 PluginLogger.DevWarn("Bridge session ended with error", ("port", port), ("attempt", attempt), ("error", ex.Message));
@@ -500,14 +496,12 @@ namespace UnityMcpPlugin
             return _editorStateTracker.Snapshot(connected);
         }
 
-        private (bool HadConnectivityIssue, int FailedAttempts) ResetConnectivityIssueTracking()
+        private void ResetConnectivityIssueTracking()
         {
             lock (_gate)
             {
-                var result = (_connectivityIssueAnnounced, _consecutiveConnectFailures);
                 _connectivityIssueAnnounced = false;
                 _consecutiveConnectFailures = 0;
-                return result;
             }
         }
 
