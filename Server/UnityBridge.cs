@@ -142,6 +142,18 @@ internal sealed class UnityBridge
         }, cancellationToken);
     }
 
+    public Task<GetPlayModeStateResult> GetPlayModeStateAsync(CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            PruneJobs();
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPlayModeState);
+            var payload = await ExecuteSyncToolAsync(ToolNames.GetPlayModeState, new JsonObject(), timeoutMs, token);
+            return new GetPlayModeStateResult(payload);
+        }, cancellationToken);
+    }
+
     public Task<ClearConsoleResult> ClearConsoleAsync(CancellationToken cancellationToken)
     {
         return _scheduler.EnqueueAsync(async token =>
@@ -163,6 +175,25 @@ internal sealed class UnityBridge
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RefreshAssets);
             var payload = await ExecuteSyncToolAsync(ToolNames.RefreshAssets, new JsonObject(), timeoutMs, token);
             return new RefreshAssetsResult(payload);
+        }, cancellationToken);
+    }
+
+    public Task<ControlPlayModeResult> ControlPlayModeAsync(ControlPlayModeRequest request, CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            PruneJobs();
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ControlPlayMode);
+            var payload = await ExecuteSyncToolAsync(
+                ToolNames.ControlPlayMode,
+                new JsonObject
+                {
+                    ["action"] = request.Action,
+                },
+                timeoutMs,
+                token);
+            return new ControlPlayModeResult(payload);
         }, cancellationToken);
     }
 

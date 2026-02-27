@@ -109,6 +109,19 @@ namespace UnityMcpPlugin
     internal sealed record RefreshAssetsPayload(
         [property: JsonProperty("refreshed")] bool Refreshed);
 
+    internal sealed record PlayModeStatePayload(
+        [property: JsonProperty("state")] string State,
+        [property: JsonProperty("is_playing")] bool IsPlaying,
+        [property: JsonProperty("is_paused")] bool IsPaused,
+        [property: JsonProperty("is_playing_or_will_change_playmode")] bool IsPlayingOrWillChangePlaymode);
+
+    internal sealed record PlayModeControlPayload(
+        [property: JsonProperty("action")] string Action,
+        [property: JsonProperty("accepted")] bool Accepted,
+        [property: JsonProperty("is_playing")] bool IsPlaying,
+        [property: JsonProperty("is_paused")] bool IsPaused,
+        [property: JsonProperty("is_playing_or_will_change_playmode")] bool IsPlayingOrWillChangePlaymode);
+
     internal sealed record TestSummary(
         [property: JsonProperty("total")] int Total,
         [property: JsonProperty("passed")] int Passed,

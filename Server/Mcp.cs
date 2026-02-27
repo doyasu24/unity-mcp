@@ -41,9 +41,11 @@ internal sealed class McpToolService
         return toolName switch
         {
             ToolNames.GetEditorState => _runtimeState.GetSnapshot(),
+            ToolNames.GetPlayModeState => (await _unityBridge.GetPlayModeStateAsync(cancellationToken)).Payload,
             ToolNames.ReadConsole => (await _unityBridge.ReadConsoleAsync(ParseReadConsoleRequest(arguments), cancellationToken)).Payload,
             ToolNames.ClearConsole => (await _unityBridge.ClearConsoleAsync(cancellationToken)).Payload,
             ToolNames.RefreshAssets => (await _unityBridge.RefreshAssetsAsync(cancellationToken)).Payload,
+            ToolNames.ControlPlayMode => (await _unityBridge.ControlPlayModeAsync(ParseControlPlayModeRequest(arguments), cancellationToken)).Payload,
             ToolNames.RunTests => await _unityBridge.RunTestsAsync(ParseRunTestsRequest(arguments), cancellationToken),
             ToolNames.GetJobStatus => await _unityBridge.GetJobStatusAsync(ParseJobStatusRequest(arguments), cancellationToken),
             ToolNames.CancelJob => await _unityBridge.CancelJobAsync(ParseCancelJobRequest(arguments), cancellationToken),
@@ -91,6 +93,20 @@ internal sealed class McpToolService
         }
 
         return new RunTestsRequest(mode, filter);
+    }
+
+    private static ControlPlayModeRequest ParseControlPlayModeRequest(JsonObject arguments)
+    {
+        var action = JsonHelpers.GetString(arguments, "action");
+        if (!PlayModeActions.IsSupported(action))
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"action must be one of {PlayModeActions.Start}|{PlayModeActions.Stop}|{PlayModeActions.Pause}",
+                new JsonObject { ["action"] = action });
+        }
+
+        return new ControlPlayModeRequest(action!);
     }
 
     private static JobStatusRequest ParseJobStatusRequest(JsonObject arguments)

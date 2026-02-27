@@ -11,15 +11,17 @@ graph LR
 
 ## Available Tools
 
-| Tool               | What it does                                    |
-| ------------------ | ----------------------------------------------- |
-| `read_console`     | Reads Unity console entries.                    |
-| `clear_console`    | Clears Unity Console log entries.               |
-| `refresh_assets`   | Refreshes Unity Editor assets.                  |
-| `run_tests`        | Starts Unity tests as a cancellable job.        |
-| `get_editor_state` | Returns current server/editor connection state. |
-| `get_job_status`   | Checks state/result of a submitted test job.    |
-| `cancel_job`       | Requests cancellation for a running/queued job. |
+| Tool                  | What it does                                     |
+| --------------------- | ------------------------------------------------ |
+| `read_console`        | Reads Unity console entries.                     |
+| `clear_console`       | Clears Unity Console log entries.                |
+| `refresh_assets`      | Refreshes Unity Editor assets.                   |
+| `get_play_mode_state` | Gets current play/pause/stop state.              |
+| `control_play_mode`   | Controls play mode (`action`: start/stop/pause). |
+| `run_tests`           | Starts Unity tests as a cancellable job.         |
+| `get_editor_state`    | Returns current server/editor connection state.  |
+| `get_job_status`      | Checks state/result of a submitted test job.     |
+| `cancel_job`          | Requests cancellation for a running/queued job.  |
 
 ## Prerequisites
 

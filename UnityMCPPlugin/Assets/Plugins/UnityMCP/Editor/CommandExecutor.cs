@@ -40,6 +40,11 @@ namespace UnityMcpPlugin
                     snapshot.Seq);
             }
 
+            if (string.Equals(toolName, ToolNames.GetPlayModeState, StringComparison.Ordinal))
+            {
+                return await MainThreadDispatcher.InvokeAsync(BuildPlayModeStatePayload);
+            }
+
             if (string.Equals(toolName, ToolNames.ClearConsole, StringComparison.Ordinal))
             {
                 var clearedCount = LogBuffer.Clear();
@@ -67,7 +72,75 @@ namespace UnityMcpPlugin
                 return new RefreshAssetsPayload(true);
             }
 
+            if (string.Equals(toolName, ToolNames.ControlPlayMode, StringComparison.Ordinal))
+            {
+                var action = Payload.GetString(parameters, "action");
+                if (!PlayModeActions.IsSupported(action))
+                {
+                    throw new PluginException(
+                        "ERR_INVALID_PARAMS",
+                        $"action must be {PlayModeActions.Start}|{PlayModeActions.Stop}|{PlayModeActions.Pause}");
+                }
+
+                return await MainThreadDispatcher.InvokeAsync(() => ControlPlayMode(action!));
+            }
+
             throw new PluginException("ERR_UNKNOWN_COMMAND", $"unsupported tool: {toolName}");
+        }
+
+        private static PlayModeControlPayload ControlPlayMode(string action)
+        {
+            switch (action)
+            {
+                case PlayModeActions.Start:
+                    EditorApplication.isPaused = false;
+                    EditorApplication.isPlaying = true;
+                    break;
+                case PlayModeActions.Stop:
+                    EditorApplication.isPaused = false;
+                    EditorApplication.isPlaying = false;
+                    break;
+                case PlayModeActions.Pause:
+                    if (!EditorApplication.isPlaying)
+                    {
+                        throw new PluginException("ERR_INVALID_STATE", "pause requires play mode");
+                    }
+
+                    EditorApplication.isPaused = true;
+                    break;
+                default:
+                    throw new PluginException(
+                        "ERR_INVALID_PARAMS",
+                        $"action must be {PlayModeActions.Start}|{PlayModeActions.Stop}|{PlayModeActions.Pause}");
+            }
+
+            return BuildPlayModePayload(action);
+        }
+
+        private static PlayModeStatePayload BuildPlayModeStatePayload()
+        {
+            var isPlaying = EditorApplication.isPlaying;
+            var isPaused = EditorApplication.isPaused;
+            var isPlayingOrWillChangePlaymode = EditorApplication.isPlayingOrWillChangePlaymode;
+            var state = isPlaying
+                ? (isPaused ? PlayModeStates.Paused : PlayModeStates.Playing)
+                : PlayModeStates.Stopped;
+
+            return new PlayModeStatePayload(
+                state,
+                isPlaying,
+                isPaused,
+                isPlayingOrWillChangePlaymode);
+        }
+
+        private static PlayModeControlPayload BuildPlayModePayload(string action)
+        {
+            return new PlayModeControlPayload(
+                action,
+                true,
+                EditorApplication.isPlaying,
+                EditorApplication.isPaused,
+                EditorApplication.isPlayingOrWillChangePlaymode);
         }
 
         private static bool TryClearUnityConsole()

@@ -27,6 +27,16 @@ internal static class ToolCatalog
             true,
             "Returns current server/editor connection state.",
             EmptyObjectSchema()),
+        [ToolNames.GetPlayModeState] = new(
+            ToolNames.GetPlayModeState,
+            "sync",
+            false,
+            5000,
+            10000,
+            false,
+            true,
+            "Read-only: gets current Unity Editor play mode state.",
+            EmptyObjectSchema()),
         [ToolNames.ReadConsole] = new(
             ToolNames.ReadConsole,
             "sync",
@@ -71,6 +81,29 @@ internal static class ToolCatalog
             false,
             "Refreshes Unity Editor assets.",
             EmptyObjectSchema()),
+        [ToolNames.ControlPlayMode] = new(
+            ToolNames.ControlPlayMode,
+            "sync",
+            false,
+            10000,
+            30000,
+            false,
+            false,
+            "Edit: controls Unity Editor play mode (start, stop, pause).",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["action"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = PlayModeActions.ToJsonArray(),
+                    },
+                },
+                ["required"] = new JsonArray("action"),
+                ["additionalProperties"] = false,
+            }),
         [ToolNames.RunTests] = new(
             ToolNames.RunTests,
             "job",
