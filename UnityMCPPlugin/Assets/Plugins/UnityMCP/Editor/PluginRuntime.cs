@@ -18,8 +18,6 @@ namespace UnityMcpPlugin
         private const double ReconnectJitterRatio = 0.1;
 
         private const int ReconfigureConnectTimeoutMs = 5000;
-        private const int ReconfigureMaxAttempts = 3;
-        private const int ReconfigureRetryIntervalMs = 200;
         private const int ConnectivityWarningThrottleMs = 30000;
 
         private readonly object _gate = new();
@@ -218,57 +216,15 @@ namespace UnityMcpPlugin
                 lock (_gate)
                 {
                     _desiredPort = newPort;
+                    _activePort = newPort;
                 }
 
                 _connectionManager.RequestReconnect();
-                var connectedNewPort = await _connectionManager.WaitForConnectedPortAsync(
-                    newPort,
-                    ReconfigureMaxAttempts,
-                    ReconfigureConnectTimeoutMs,
-                    ReconfigureRetryIntervalMs,
-                    CancellationToken.None);
-                if (connectedNewPort)
-                {
-                    lock (_gate)
-                    {
-                        _activePort = newPort;
-                    }
-
-                    PluginLogger.UserInfo("Port reconfigure applied", ("old_port", oldPort), ("new_port", newPort));
-                    return PortReconfigureResult.Applied(newPort);
-                }
-
-                lock (_gate)
-                {
-                    _desiredPort = oldPort;
-                }
-
-                _connectionManager.RequestReconnect();
-                var rollbackSuccess = await _connectionManager.WaitForConnectedPortAsync(
-                    oldPort,
-                    ReconfigureMaxAttempts,
-                    ReconfigureConnectTimeoutMs,
-                    ReconfigureRetryIntervalMs,
-                    CancellationToken.None);
-                if (rollbackSuccess)
-                {
-                    lock (_gate)
-                    {
-                        _activePort = oldPort;
-                    }
-
-                    PluginLogger.UserWarn("Port reconfigure rolled back", ("old_port", oldPort), ("new_port", newPort));
-                    return PortReconfigureResult.RolledBack(
-                        oldPort,
-                        "ERR_RECONFIG_CONNECT_TIMEOUT",
-                        "failed to connect to new port and rolled back to previous port");
-                }
-
-                PluginLogger.UserError("Port reconfigure rollback failed", ("old_port", oldPort), ("new_port", newPort));
-                return PortReconfigureResult.Failed(
-                    GetActivePort(),
-                    "ERR_RECONFIG_ROLLBACK_FAILED",
-                    "failed to connect to new port and rollback port");
+                PluginLogger.UserInfo(
+                    "Port setting applied. Reconnecting in background.",
+                    ("old_port", oldPort),
+                    ("new_port", newPort));
+                return PortReconfigureResult.Applied(newPort);
             }
             catch (Exception ex)
             {

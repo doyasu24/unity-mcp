@@ -98,7 +98,7 @@ namespace UnityMcpPlugin
                     settings.schemaVersion = PluginSettings.SupportedSchemaVersion;
                     settings.SaveToProjectSettings();
 
-                    _status = $"Applied. Active port is {result.ActivePort}.";
+                    _status = $"Applied. Port is now {result.ActivePort}. Reconnecting in background.";
                     _statusType = MessageType.Info;
                     return;
                 }
