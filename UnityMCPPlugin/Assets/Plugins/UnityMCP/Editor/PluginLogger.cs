@@ -2,8 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
+using Newtonsoft.Json.Linq;
 using System.Threading;
 using UnityEditor;
 using UnityEngine;
@@ -160,7 +159,7 @@ namespace UnityMcpPlugin
 
         private static string BuildStructuredText(LogType type, string message, IReadOnlyList<(string Key, object Value)> context)
         {
-            var payload = new JsonObject
+            var payload = new JObject
             {
                 ["level"] = type == LogType.Error ? "ERROR" : type == LogType.Warning ? "WARN" : "INFO",
                 ["ts"] = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
@@ -169,7 +168,7 @@ namespace UnityMcpPlugin
 
             for (var i = 0; i < context.Count; i += 1)
             {
-                payload[context[i].Key] = ToJsonNode(context[i].Value);
+                payload[context[i].Key] = ToJsonToken(context[i].Value);
             }
 
             return JsonUtil.Serialize(payload);
@@ -203,36 +202,36 @@ namespace UnityMcpPlugin
                 return ex.Message;
             }
 
-            if (value is JsonNode jsonNode)
+            if (value is JToken jsonToken)
             {
-                return JsonUtil.Serialize(jsonNode);
+                return JsonUtil.Serialize(jsonToken);
             }
 
             return value.ToString();
         }
 
-        private static JsonNode ToJsonNode(object value)
+        private static JToken ToJsonToken(object value)
         {
             if (value == null)
             {
                 return null;
             }
 
-            if (value is JsonNode jsonNode)
+            if (value is JToken jsonToken)
             {
-                return jsonNode.DeepClone();
+                return jsonToken.DeepClone();
             }
 
             if (value is Exception ex)
             {
-                return new JsonObject
+                return new JObject
                 {
                     ["type"] = ex.GetType().Name,
                     ["message"] = ex.Message,
                 };
             }
 
-            return JsonSerializer.SerializeToNode(value);
+            return JsonUtil.SerializeToToken(value);
         }
 
         private static string GetDetailedLogsEditorPrefKey()

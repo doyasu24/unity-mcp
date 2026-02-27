@@ -365,34 +365,31 @@ namespace UnityMcpPlugin
                 return;
             }
 
-            using (document)
+            var message = document;
+
+            var protocolVersion = Payload.GetInt(message, "protocol_version");
+            var requestId = Payload.GetString(message, "request_id");
+            if (protocolVersion != Wire.ProtocolVersion)
             {
-                var message = document.RootElement;
-
-                var protocolVersion = Payload.GetInt(message, "protocol_version");
-                var requestId = Payload.GetString(message, "request_id");
-                if (protocolVersion != Wire.ProtocolVersion)
-                {
-                    await SendProtocolErrorAsync(requestId, "ERR_INVALID_REQUEST", "protocol_version mismatch", cancellationToken);
-                    _connectionManager.CloseCurrentSocket("protocol-version-mismatch");
-                    return;
-                }
-
-                var type = Payload.GetString(message, "type");
-                if (string.IsNullOrEmpty(type))
-                {
-                    await SendProtocolErrorAsync(requestId, "ERR_INVALID_REQUEST", "type is required", cancellationToken);
-                    return;
-                }
-
-                if (string.Equals(type, "ping", StringComparison.Ordinal))
-                {
-                    await SendPongAsync(cancellationToken);
-                    return;
-                }
-
-                await _commandRouter.RouteAsync(type, message, cancellationToken);
+                await SendProtocolErrorAsync(requestId, "ERR_INVALID_REQUEST", "protocol_version mismatch", cancellationToken);
+                _connectionManager.CloseCurrentSocket("protocol-version-mismatch");
+                return;
             }
+
+            var type = Payload.GetString(message, "type");
+            if (string.IsNullOrEmpty(type))
+            {
+                await SendProtocolErrorAsync(requestId, "ERR_INVALID_REQUEST", "type is required", cancellationToken);
+                return;
+            }
+
+            if (string.Equals(type, "ping", StringComparison.Ordinal))
+            {
+                await SendPongAsync(cancellationToken);
+                return;
+            }
+
+            await _commandRouter.RouteAsync(type, message, cancellationToken);
         }
 
         private async Task SendHelloAsync(CancellationToken cancellationToken)

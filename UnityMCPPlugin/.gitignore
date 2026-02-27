@@ -103,7 +103,3 @@ InitTestScene*.unity*
 
 # JetBrains
 .idea/
-
-# NuGetForUnity In Packages Folder
-/[Pp]ackages/nuget-packages/InstalledPackages/
-/[Pp]ackages/nuget-packages/InstalledPackages.meta

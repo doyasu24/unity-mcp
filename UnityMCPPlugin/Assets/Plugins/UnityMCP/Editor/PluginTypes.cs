@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using System.Text.Json.Serialization;
+using Newtonsoft.Json;
 
 namespace UnityMcpPlugin
 {
@@ -87,45 +87,45 @@ namespace UnityMcpPlugin
     }
 
     internal sealed record RuntimeStatePayload(
-        [property: JsonPropertyName("server_state")] string ServerState,
-        [property: JsonPropertyName("editor_state")] string EditorState,
-        [property: JsonPropertyName("connected")] bool Connected,
-        [property: JsonPropertyName("last_editor_status_seq")] ulong LastEditorStatusSeq);
+        [property: JsonProperty("server_state")] string ServerState,
+        [property: JsonProperty("editor_state")] string EditorState,
+        [property: JsonProperty("connected")] bool Connected,
+        [property: JsonProperty("last_editor_status_seq")] ulong LastEditorStatusSeq);
 
     internal sealed record ConsoleEntry(
-        [property: JsonPropertyName("type")] string Type,
-        [property: JsonPropertyName("message")] string Message,
-        [property: JsonPropertyName("stack_trace")] string StackTrace);
+        [property: JsonProperty("type")] string Type,
+        [property: JsonProperty("message")] string Message,
+        [property: JsonProperty("stack_trace")] string StackTrace);
 
     internal sealed record ReadConsolePayload(
-        [property: JsonPropertyName("entries")] IReadOnlyList<ConsoleEntry> Entries,
-        [property: JsonPropertyName("count")] int Count,
-        [property: JsonPropertyName("truncated")] bool Truncated);
+        [property: JsonProperty("entries")] IReadOnlyList<ConsoleEntry> Entries,
+        [property: JsonProperty("count")] int Count,
+        [property: JsonProperty("truncated")] bool Truncated);
 
     internal sealed record ClearConsolePayload(
-        [property: JsonPropertyName("cleared")] bool Cleared,
-        [property: JsonPropertyName("cleared_count")] int ClearedCount);
+        [property: JsonProperty("cleared")] bool Cleared,
+        [property: JsonProperty("cleared_count")] int ClearedCount);
 
     internal sealed record RefreshAssetsPayload(
-        [property: JsonPropertyName("refreshed")] bool Refreshed);
+        [property: JsonProperty("refreshed")] bool Refreshed);
 
     internal sealed record TestSummary(
-        [property: JsonPropertyName("total")] int Total,
-        [property: JsonPropertyName("passed")] int Passed,
-        [property: JsonPropertyName("failed")] int Failed,
-        [property: JsonPropertyName("skipped")] int Skipped,
-        [property: JsonPropertyName("duration_ms")] int DurationMs);
+        [property: JsonProperty("total")] int Total,
+        [property: JsonProperty("passed")] int Passed,
+        [property: JsonProperty("failed")] int Failed,
+        [property: JsonProperty("skipped")] int Skipped,
+        [property: JsonProperty("duration_ms")] int DurationMs);
 
     internal sealed record FailedTest(
-        [property: JsonPropertyName("name")] string Name,
-        [property: JsonPropertyName("message")] string Message,
-        [property: JsonPropertyName("stack_trace")] string StackTrace);
+        [property: JsonProperty("name")] string Name,
+        [property: JsonProperty("message")] string Message,
+        [property: JsonProperty("stack_trace")] string StackTrace);
 
     internal sealed record RunTestsJobResult(
-        [property: JsonPropertyName("summary")] TestSummary Summary,
-        [property: JsonPropertyName("failed_tests")] IReadOnlyList<FailedTest> FailedTests,
-        [property: JsonPropertyName("mode")] string Mode,
-        [property: JsonPropertyName("filter")] string Filter)
+        [property: JsonProperty("summary")] TestSummary Summary,
+        [property: JsonProperty("failed_tests")] IReadOnlyList<FailedTest> FailedTests,
+        [property: JsonProperty("mode")] string Mode,
+        [property: JsonProperty("filter")] string Filter)
     {
         internal static RunTestsJobResult Empty(string mode, string filter)
         {

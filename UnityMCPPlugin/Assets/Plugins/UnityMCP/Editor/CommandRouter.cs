@@ -1,7 +1,7 @@
 using System;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 
 namespace UnityMcpPlugin
 {
@@ -24,7 +24,7 @@ namespace UnityMcpPlugin
             _sendProtocolErrorAsync = sendProtocolErrorAsync;
         }
 
-        internal async Task RouteAsync(string type, JsonElement message, CancellationToken cancellationToken)
+        internal async Task RouteAsync(string type, JObject message, CancellationToken cancellationToken)
         {
             switch (type)
             {
@@ -56,13 +56,13 @@ namespace UnityMcpPlugin
             }
         }
 
-        private static void HandleServerHello(JsonElement message)
+        private static void HandleServerHello(JObject message)
         {
             var serverVersion = Payload.GetString(message, "server_version") ?? "unknown";
             PluginLogger.DevInfo("Received server hello", ("server_version", serverVersion));
         }
 
-        private static void HandleServerCapability(JsonElement message)
+        private static void HandleServerCapability(JObject message)
         {
             if (!Payload.TryGetArrayLength(message, "tools", out var count))
             {
@@ -73,7 +73,7 @@ namespace UnityMcpPlugin
             PluginLogger.DevInfo("Received capability", ("tool_count", count));
         }
 
-        private async Task HandleExecuteAsync(JsonElement message, CancellationToken cancellationToken)
+        private async Task HandleExecuteAsync(JObject message, CancellationToken cancellationToken)
         {
             var requestId = Payload.GetString(message, "request_id");
             var toolName = Payload.GetString(message, "tool_name");
@@ -129,7 +129,7 @@ namespace UnityMcpPlugin
             }
         }
 
-        private async Task HandleSubmitJobAsync(JsonElement message, CancellationToken cancellationToken)
+        private async Task HandleSubmitJobAsync(JObject message, CancellationToken cancellationToken)
         {
             var requestId = Payload.GetString(message, "request_id");
             var toolName = Payload.GetString(message, "tool_name");
@@ -171,7 +171,7 @@ namespace UnityMcpPlugin
             }, cancellationToken);
         }
 
-        private async Task HandleGetJobStatusAsync(JsonElement message, CancellationToken cancellationToken)
+        private async Task HandleGetJobStatusAsync(JObject message, CancellationToken cancellationToken)
         {
             var requestId = Payload.GetString(message, "request_id");
             var jobId = Payload.GetString(message, "job_id");
@@ -200,7 +200,7 @@ namespace UnityMcpPlugin
             }, cancellationToken);
         }
 
-        private async Task HandleCancelAsync(JsonElement message, CancellationToken cancellationToken)
+        private async Task HandleCancelAsync(JObject message, CancellationToken cancellationToken)
         {
             var requestId = Payload.GetString(message, "request_id");
             var targetJobId = Payload.GetString(message, "target_job_id");

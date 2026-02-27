@@ -1,7 +1,7 @@
 using System;
 using System.Reflection;
-using System.Text.Json;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 using UnityEditor;
 
 namespace UnityMcpPlugin
@@ -15,7 +15,7 @@ namespace UnityMcpPlugin
             _snapshotProvider = snapshotProvider;
         }
 
-        internal async Task<object> ExecuteToolAsync(string toolName, JsonElement parameters)
+        internal async Task<object> ExecuteToolAsync(string toolName, JObject parameters)
         {
             if (string.Equals(toolName, ToolNames.ReadConsole, StringComparison.Ordinal))
             {

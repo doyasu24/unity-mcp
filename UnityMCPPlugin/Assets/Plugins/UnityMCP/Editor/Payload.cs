@@ -1,14 +1,15 @@
-using System.Text.Json;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace UnityMcpPlugin
 {
     internal static class Payload
     {
-        internal static bool TryParseDocument(string raw, out JsonDocument document)
+        internal static bool TryParseDocument(string raw, out JObject document)
         {
             try
             {
-                document = JsonDocument.Parse(raw);
+                document = JObject.Parse(raw);
                 return true;
             }
             catch
@@ -18,70 +19,65 @@ namespace UnityMcpPlugin
             }
         }
 
-        internal static string GetString(JsonElement map, string key)
+        internal static string GetString(JToken map, string key)
         {
-            if (map.ValueKind != JsonValueKind.Object)
+            if (map?.Type != JTokenType.Object)
             {
                 return null;
             }
 
-            if (!map.TryGetProperty(key, out var value))
+            var value = map[key];
+            if (value == null)
             {
                 return null;
             }
 
-            if (value.ValueKind == JsonValueKind.String)
+            if (value.Type == JTokenType.String)
             {
-                return value.GetString();
+                return value.Value<string>();
             }
 
             return null;
         }
 
-        internal static int? GetInt(JsonElement map, string key)
+        internal static int? GetInt(JToken map, string key)
         {
-            if (map.ValueKind != JsonValueKind.Object)
+            if (map?.Type != JTokenType.Object)
             {
                 return null;
             }
 
-            if (!map.TryGetProperty(key, out var value))
+            var value = map[key];
+            if (value == null)
             {
                 return null;
             }
 
-            switch (value.ValueKind)
+            switch (value.Type)
             {
-                case JsonValueKind.Number:
-                    if (value.TryGetInt32(out var intValue))
+                case JTokenType.Integer:
+                {
+                    var longValue = value.Value<long>();
+                    if (longValue >= int.MinValue && longValue <= int.MaxValue)
                     {
-                        return intValue;
-                    }
-
-                    if (value.TryGetInt64(out var longValue))
-                    {
-                        if (longValue < int.MinValue || longValue > int.MaxValue)
-                        {
-                            return null;
-                        }
-
                         return (int)longValue;
                     }
 
-                    if (value.TryGetDouble(out var doubleValue))
+                    return null;
+                }
+                case JTokenType.Float:
+                {
+                    var doubleValue = value.Value<double>();
+                    if (doubleValue >= int.MinValue && doubleValue <= int.MaxValue)
                     {
-                        if (doubleValue < int.MinValue || doubleValue > int.MaxValue)
-                        {
-                            return null;
-                        }
-
                         return (int)doubleValue;
                     }
 
                     return null;
-                case JsonValueKind.String:
+                }
+                case JTokenType.String:
                 {
-                    var text = value.GetString();
+                    var text = value.Value<string>();
                     if (int.TryParse(text, out var parsed))
                     {
                         return parsed;
@@ -94,39 +90,40 @@ namespace UnityMcpPlugin
             }
         }
 
-        internal static bool TryGetObject(JsonElement map, string key, out JsonElement value)
+        internal static bool TryGetObject(JToken map, string key, out JObject value)
         {
-            if (map.ValueKind != JsonValueKind.Object)
+            if (map?.Type != JTokenType.Object)
             {
-                value = default;
+                value = null;
                 return false;
             }
 
-            if (map.TryGetProperty(key, out value) && value.ValueKind == JsonValueKind.Object)
+            if (map[key] is JObject objectValue)
             {
+                value = objectValue;
                 return true;
             }
 
-            value = default;
+            value = null;
             return false;
         }
 
-        internal static JsonElement GetObjectOrEmpty(JsonElement map, string key)
+        internal static JObject GetObjectOrEmpty(JToken map, string key)
         {
-            return TryGetObject(map, key, out var value) ? value : default;
+            return TryGetObject(map, key, out var value) ? value : new JObject();
         }
 
-        internal static bool TryGetArrayLength(JsonElement map, string key, out int length)
+        internal static bool TryGetArrayLength(JToken map, string key, out int length)
         {
-            if (map.ValueKind != JsonValueKind.Object)
+            if (map?.Type != JTokenType.Object)
             {
                 length = 0;
                 return false;
             }
 
-            if (map.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.Array)
+            if (map[key] is JArray arrayValue)
             {
-                length = value.GetArrayLength();
+                length = arrayValue.Count;
                 return true;
             }
 
@@ -134,9 +131,9 @@ namespace UnityMcpPlugin
             return false;
         }
 
-        internal static string ToJson(JsonElement map)
+        internal static string ToJson(JToken map)
         {
-            return map.GetRawText();
+            return map == null ? "null" : map.ToString(Formatting.None);
         }
     }
 }
