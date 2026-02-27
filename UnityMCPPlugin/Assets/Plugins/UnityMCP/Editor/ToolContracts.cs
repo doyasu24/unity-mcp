@@ -4,6 +4,8 @@ namespace UnityMcpPlugin
     {
         internal const string GetEditorState = "get_editor_state";
         internal const string ReadConsole = "read_console";
+        internal const string ClearConsole = "clear_console";
+        internal const string RefreshAssets = "refresh_assets";
         internal const string RunTests = "run_tests";
         internal const string GetJobStatus = "get_job_status";
         internal const string Cancel = "cancel";

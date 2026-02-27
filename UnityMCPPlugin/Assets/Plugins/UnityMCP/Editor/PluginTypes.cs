@@ -102,6 +102,13 @@ namespace UnityMcpPlugin
         [property: JsonPropertyName("count")] int Count,
         [property: JsonPropertyName("truncated")] bool Truncated);
 
+    internal sealed record ClearConsolePayload(
+        [property: JsonPropertyName("cleared")] bool Cleared,
+        [property: JsonPropertyName("cleared_count")] int ClearedCount);
+
+    internal sealed record RefreshAssetsPayload(
+        [property: JsonPropertyName("refreshed")] bool Refreshed);
+
     internal sealed record TestSummary(
         [property: JsonPropertyName("total")] int Total,
         [property: JsonPropertyName("passed")] int Passed,

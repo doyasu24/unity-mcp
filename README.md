@@ -14,6 +14,8 @@ graph LR
 | Tool               | What it does                                    |
 | ------------------ | ----------------------------------------------- |
 | `read_console`     | Reads Unity console entries.                    |
+| `clear_console`    | Clears Unity Console log entries.               |
+| `refresh_assets`   | Refreshes Unity Editor assets.                  |
 | `run_tests`        | Starts Unity tests as a cancellable job.        |
 | `get_editor_state` | Returns current server/editor connection state. |
 | `get_job_status`   | Checks state/result of a submitted test job.    |

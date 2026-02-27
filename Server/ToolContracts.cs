@@ -6,6 +6,8 @@ internal static class ToolNames
 {
     public const string GetEditorState = "get_editor_state";
     public const string ReadConsole = "read_console";
+    public const string ClearConsole = "clear_console";
+    public const string RefreshAssets = "refresh_assets";
     public const string RunTests = "run_tests";
     public const string GetJobStatus = "get_job_status";
     public const string CancelJob = "cancel_job";
@@ -44,6 +46,10 @@ internal sealed record JobStatusRequest(string JobId);
 internal sealed record CancelJobRequest(string JobId);
 
 internal sealed record ReadConsoleResult(JsonNode Payload);
+
+internal sealed record ClearConsoleResult(JsonNode Payload);
+
+internal sealed record RefreshAssetsResult(JsonNode Payload);
 
 internal sealed record RunTestsResult(string JobId, string State);
 

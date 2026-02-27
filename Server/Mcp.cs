@@ -42,6 +42,8 @@ internal sealed class McpToolService
         {
             ToolNames.GetEditorState => _runtimeState.GetSnapshot(),
             ToolNames.ReadConsole => (await _unityBridge.ReadConsoleAsync(ParseReadConsoleRequest(arguments), cancellationToken)).Payload,
+            ToolNames.ClearConsole => (await _unityBridge.ClearConsoleAsync(cancellationToken)).Payload,
+            ToolNames.RefreshAssets => (await _unityBridge.RefreshAssetsAsync(cancellationToken)).Payload,
             ToolNames.RunTests => await _unityBridge.RunTestsAsync(ParseRunTestsRequest(arguments), cancellationToken),
             ToolNames.GetJobStatus => await _unityBridge.GetJobStatusAsync(ParseJobStatusRequest(arguments), cancellationToken),
             ToolNames.CancelJob => await _unityBridge.CancelJobAsync(ParseCancelJobRequest(arguments), cancellationToken),

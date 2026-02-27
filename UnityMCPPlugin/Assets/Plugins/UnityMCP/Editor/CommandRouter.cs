@@ -87,8 +87,7 @@ namespace UnityMcpPlugin
 
             try
             {
-                // Sync tools are pure in-memory reads and do not require Unity main thread APIs.
-                var result = _commandExecutor.ExecuteSyncTool(toolName, parameters);
+                var result = await _commandExecutor.ExecuteToolAsync(toolName, parameters);
                 await _sendMessageAsync(new
                 {
                     type = "result",

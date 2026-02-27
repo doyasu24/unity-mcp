@@ -130,37 +130,74 @@ internal sealed class UnityBridge
             PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ReadConsole);
-
-            var requestMessage = new JsonObject
-            {
-                ["type"] = "execute",
-                ["protocol_version"] = Constants.ProtocolVersion,
-                ["request_id"] = Guid.NewGuid().ToString("D"),
-                ["tool_name"] = ToolNames.ReadConsole,
-                ["params"] = new JsonObject
+            var payload = await ExecuteSyncToolAsync(
+                ToolNames.ReadConsole,
+                new JsonObject
                 {
                     ["max_entries"] = request.MaxEntries,
                 },
-                ["timeout_ms"] = timeoutMs,
-            };
-
-            var response = await SendRequestAsync(
-                requestMessage,
-                "result",
-                TimeSpan.FromMilliseconds(timeoutMs),
+                timeoutMs,
                 token);
-
-            var status = JsonHelpers.GetString(response, "status");
-            if (string.Equals(status, "ok", StringComparison.Ordinal))
-            {
-                return new ReadConsoleResult(JsonHelpers.CloneNode(response["result"]) ?? new JsonObject());
-            }
-
-            throw new McpException(
-                ErrorCodes.UnityExecution,
-                "Unity returned execution error",
-                JsonHelpers.CloneNode(response));
+            return new ReadConsoleResult(payload);
         }, cancellationToken);
+    }
+
+    public Task<ClearConsoleResult> ClearConsoleAsync(CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            PruneJobs();
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ClearConsole);
+            var payload = await ExecuteSyncToolAsync(ToolNames.ClearConsole, new JsonObject(), timeoutMs, token);
+            return new ClearConsoleResult(payload);
+        }, cancellationToken);
+    }
+
+    public Task<RefreshAssetsResult> RefreshAssetsAsync(CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            PruneJobs();
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RefreshAssets);
+            var payload = await ExecuteSyncToolAsync(ToolNames.RefreshAssets, new JsonObject(), timeoutMs, token);
+            return new RefreshAssetsResult(payload);
+        }, cancellationToken);
+    }
+
+    private async Task<JsonNode> ExecuteSyncToolAsync(
+        string toolName,
+        JsonObject parameters,
+        int timeoutMs,
+        CancellationToken cancellationToken)
+    {
+        var requestMessage = new JsonObject
+        {
+            ["type"] = "execute",
+            ["protocol_version"] = Constants.ProtocolVersion,
+            ["request_id"] = Guid.NewGuid().ToString("D"),
+            ["tool_name"] = toolName,
+            ["params"] = parameters,
+            ["timeout_ms"] = timeoutMs,
+        };
+
+        var response = await SendRequestAsync(
+            requestMessage,
+            "result",
+            TimeSpan.FromMilliseconds(timeoutMs),
+            cancellationToken);
+
+        var status = JsonHelpers.GetString(response, "status");
+        if (string.Equals(status, "ok", StringComparison.Ordinal))
+        {
+            return JsonHelpers.CloneNode(response["result"]) ?? new JsonObject();
+        }
+
+        throw new McpException(
+            ErrorCodes.UnityExecution,
+            "Unity returned execution error",
+            JsonHelpers.CloneNode(response));
     }
 
     public Task<RunTestsResult> RunTestsAsync(RunTestsRequest request, CancellationToken cancellationToken)

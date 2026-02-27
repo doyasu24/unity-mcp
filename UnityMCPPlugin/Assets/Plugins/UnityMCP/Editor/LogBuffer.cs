@@ -53,6 +53,16 @@ namespace UnityMcpPlugin
             }
         }
 
+        internal static int Clear()
+        {
+            lock (Gate)
+            {
+                var removed = Entries.Count;
+                Entries.Clear();
+                return removed;
+            }
+        }
+
         private static void OnLogMessageReceived(string condition, string stackTrace, LogType type)
         {
             if (PluginLogger.IsPluginLog(condition))

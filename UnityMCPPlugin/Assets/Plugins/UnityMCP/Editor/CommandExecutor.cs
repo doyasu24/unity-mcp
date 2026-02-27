@@ -1,5 +1,8 @@
 using System;
+using System.Reflection;
 using System.Text.Json;
+using System.Threading.Tasks;
+using UnityEditor;
 
 namespace UnityMcpPlugin
 {
@@ -12,7 +15,7 @@ namespace UnityMcpPlugin
             _snapshotProvider = snapshotProvider;
         }
 
-        internal object ExecuteSyncTool(string toolName, JsonElement parameters)
+        internal async Task<object> ExecuteToolAsync(string toolName, JsonElement parameters)
         {
             if (string.Equals(toolName, ToolNames.ReadConsole, StringComparison.Ordinal))
             {
@@ -37,7 +40,58 @@ namespace UnityMcpPlugin
                     snapshot.Seq);
             }
 
+            if (string.Equals(toolName, ToolNames.ClearConsole, StringComparison.Ordinal))
+            {
+                var clearedCount = LogBuffer.Clear();
+                await MainThreadDispatcher.InvokeAsync(() =>
+                {
+                    if (!TryClearUnityConsole())
+                    {
+                        throw new PluginException("ERR_UNITY_EXECUTION", "failed to clear Unity Console");
+                    }
+
+                    return true;
+                });
+
+                return new ClearConsolePayload(true, clearedCount);
+            }
+
+            if (string.Equals(toolName, ToolNames.RefreshAssets, StringComparison.Ordinal))
+            {
+                await MainThreadDispatcher.InvokeAsync(() =>
+                {
+                    AssetDatabase.Refresh();
+                    return true;
+                });
+
+                return new RefreshAssetsPayload(true);
+            }
+
             throw new PluginException("ERR_UNKNOWN_COMMAND", $"unsupported tool: {toolName}");
+        }
+
+        private static bool TryClearUnityConsole()
+        {
+            return TryInvokeClear("UnityEditor.LogEntries, UnityEditor") ||
+                   TryInvokeClear("UnityEditorInternal.LogEntries, UnityEditor");
+        }
+
+        private static bool TryInvokeClear(string typeName)
+        {
+            var type = Type.GetType(typeName);
+            if (type == null)
+            {
+                return false;
+            }
+
+            var clearMethod = type.GetMethod("Clear", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            if (clearMethod == null)
+            {
+                return false;
+            }
+
+            clearMethod.Invoke(null, null);
+            return true;
         }
     }
 }
