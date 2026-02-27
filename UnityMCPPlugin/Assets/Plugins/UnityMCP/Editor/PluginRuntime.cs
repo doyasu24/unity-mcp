@@ -2,6 +2,7 @@ using System;
 using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 
 namespace UnityMcpPlugin
 {
@@ -34,6 +35,7 @@ namespace UnityMcpPlugin
         private int _activePort;
         private int _consecutiveConnectFailures;
         private bool _connectivityIssueAnnounced;
+        private bool _multiEditorConflictAnnounced;
         private DateTimeOffset _lastConnectivityWarningUtc;
 
         private bool _initialized;
@@ -86,6 +88,7 @@ namespace UnityMcpPlugin
                 _activePort = settings.port;
                 _consecutiveConnectFailures = 0;
                 _connectivityIssueAnnounced = false;
+                _multiEditorConflictAnnounced = false;
                 _lastConnectivityWarningUtc = DateTimeOffset.MinValue;
                 _shuttingDown = false;
 
@@ -120,6 +123,7 @@ namespace UnityMcpPlugin
                 _initialized = false;
                 _consecutiveConnectFailures = 0;
                 _connectivityIssueAnnounced = false;
+                _multiEditorConflictAnnounced = false;
                 _lastConnectivityWarningUtc = DateTimeOffset.MinValue;
                 _shuttingDown = false;
             }
@@ -294,10 +298,8 @@ namespace UnityMcpPlugin
             {
                 PluginLogger.DevWarn("Initial editor_status send failed", ("port", port), ("error", ex.Message));
             }
-            ResetConnectivityIssueTracking();
-            PluginLogger.UserInfo("Connected to server", ("port", port));
 
-            PluginLogger.DevInfo("Bridge connected", ("port", port), ("uri", $"ws://{Host}:{port}{UnityWsPath}"));
+            PluginLogger.DevInfo("Bridge transport connected", ("port", port), ("uri", $"ws://{Host}:{port}{UnityWsPath}"));
         }
 
         private async Task OnIncomingTextMessageAsync(int port, string raw, CancellationToken cancellationToken)
@@ -380,6 +382,16 @@ namespace UnityMcpPlugin
             if (string.IsNullOrEmpty(type))
             {
                 await SendProtocolErrorAsync(requestId, "ERR_INVALID_REQUEST", "type is required", cancellationToken);
+                return;
+            }
+
+            if (string.Equals(type, "hello", StringComparison.Ordinal))
+            {
+                OnServerHelloReceived();
+            }
+
+            if (string.Equals(type, "error", StringComparison.Ordinal) && TryHandleServerErrorMessage(message))
+            {
                 return;
             }
 
@@ -493,6 +505,57 @@ namespace UnityMcpPlugin
             return _editorStateTracker.Snapshot(connected);
         }
 
+        private void OnServerHelloReceived()
+        {
+            var connectedPort = _connectionManager.GetConnectedPort();
+            lock (_gate)
+            {
+                _multiEditorConflictAnnounced = false;
+            }
+
+            ResetConnectivityIssueTracking();
+            PluginLogger.UserInfo("Connected to server", ("port", connectedPort));
+        }
+
+        private bool TryHandleServerErrorMessage(JObject message)
+        {
+            var error = Payload.GetObjectOrEmpty(message, "error");
+            var code = Payload.GetString(error, "code") ?? string.Empty;
+            var errorMessage = Payload.GetString(error, "message") ?? string.Empty;
+
+            if (!IsMultiEditorConflictError(code, errorMessage))
+            {
+                return false;
+            }
+
+            var shouldLogUser = false;
+            var connectedPort = _connectionManager.GetConnectedPort();
+            lock (_gate)
+            {
+                if (!_multiEditorConflictAnnounced)
+                {
+                    _multiEditorConflictAnnounced = true;
+                    shouldLogUser = true;
+                }
+            }
+
+            if (shouldLogUser)
+            {
+                PluginLogger.UserError(
+                    "Connection rejected: multiple Unity Editors are trying to use the same MCP server. Close one Editor, or see README > Using Multiple Unity Editors.",
+                    ("port", connectedPort));
+            }
+
+            PluginLogger.DevWarn(
+                "Server rejected Unity session because another editor is active",
+                ("port", connectedPort),
+                ("code", code),
+                ("message", errorMessage));
+
+            _connectionManager.CloseCurrentSocket("session-already-active");
+            return true;
+        }
+
         private void ResetConnectivityIssueTracking()
         {
             lock (_gate)
@@ -500,6 +563,16 @@ namespace UnityMcpPlugin
                 _connectivityIssueAnnounced = false;
                 _consecutiveConnectFailures = 0;
             }
+        }
+
+        private static bool IsMultiEditorConflictError(string code, string message)
+        {
+            if (!string.Equals(code, "ERR_INVALID_REQUEST", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            return message.IndexOf("another Unity websocket session is already active", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool IsServerUnavailableError(Exception ex)

@@ -215,6 +215,10 @@ Plugin:
 5. heartbeatは Server `ping` -> Plugin `pong`
 6. Serverは `hello` 受信完了まで接続を `pending` 扱いとし、既存 `active` セッションを切断しない。
 7. 既存 `active` がある状態で別接続が `hello` を送信した場合、Serverは既存セッションを維持し、新規接続を拒否する。
+8. 7の拒否時、Serverは `error` (`code=ERR_INVALID_REQUEST`, `message=\"another Unity websocket session is already active\"`) を返した後、新規接続をcloseする。
+9. 8を受信したPlugin（2つ目のEditor）は接続失敗として扱い、ユーザー向けに次の案内ログを出す。
+   - `Connection rejected: multiple Unity Editors are trying to use the same MCP server. Close one Editor, or see README > Using Multiple Unity Editors.`
+10. 9の案内ログは同一競合状態の間は重複出力しない。`hello` 成功後に再び競合が起きた場合は再出力してよい。
 
 ### 6.4 フィールド命名
 1. 相関キーは `request_id`
@@ -449,6 +453,7 @@ Rules:
 3. 主要状態遷移ログ
    - `booting -> waiting_editor -> ready`
 4. `ERR_*` と主要コンテキスト（state/tool/request_id）を必ず記録する
+5. 複数Editor競合で接続拒否されたPluginは、ユーザー向けエラーログに「片方のEditorを閉じる」または「README > Using Multiple Unity Editors」を必ず含める。
 
 ## 12. テスト要件（最小）
 ### 12.1 Unit
@@ -465,6 +470,7 @@ Rules:
 6. compile/reload中の待機復帰
 7. `POST /mcp` で initialize/listTools/callTool が成功
 8. 同一port上で `/mcp` と `/unity` が共存動作
+9. 既存 `active` セッション中に2つ目のEditorが `hello` を送信した場合、2つ目は拒否され、Pluginのユーザー向け案内ログが1回だけ出る。
 
 ## 13. 実装フェーズ分割
 1. Phase 1: Server skeleton + single HTTP host (`/mcp` + `/unity`) + config + state machine + wire
