@@ -152,16 +152,19 @@ internal static class ToolResultFormatter
 
     public static JsonObject Error(McpException error)
     {
+        var semantics = ErrorSemanticsResolver.Resolve(error.Code);
+        var details = ErrorSemanticsResolver.EnsureFailureDetails(
+            JsonHelpers.CloneNode(error.Details),
+            semantics.ExecutionGuarantee,
+            semantics.RecoveryAction);
+
         var payload = new JsonObject
         {
             ["code"] = error.Code,
             ["message"] = error.Message,
+            ["retryable"] = semantics.Retryable,
+            ["details"] = details,
         };
-
-        if (error.Details is not null)
-        {
-            payload["details"] = error.Details.DeepClone();
-        }
 
         return new JsonObject
         {

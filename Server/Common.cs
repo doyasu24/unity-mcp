@@ -17,8 +17,10 @@ internal static class Constants
     public const int QueueMaxSize = 32;
     public const int MaxMessageBytes = 1024 * 1024;
     public const int HeartbeatIntervalMs = 3000;
-    public const int HeartbeatTimeoutMs = 4500;
-    public const int RequestReconnectWaitMs = 2500;
+    public const int HeartbeatTimeoutMs = 12000;
+    public const int HeartbeatMissThreshold = 2;
+    public const int RequestReconnectWaitMs = 45000;
+    public const int CompileGraceTimeoutMs = 90000;
     public const string McpSessionHeader = "Mcp-Session-Id";
     public const string DefaultMcpProtocolVersion = "2025-03-26";
 }
@@ -30,6 +32,7 @@ internal static class ErrorCodes
     public const string InvalidParams = "ERR_INVALID_PARAMS";
     public const string UnknownCommand = "ERR_UNKNOWN_COMMAND";
     public const string EditorNotReady = "ERR_EDITOR_NOT_READY";
+    public const string CompileTimeout = "ERR_COMPILE_TIMEOUT";
     public const string UnityDisconnected = "ERR_UNITY_DISCONNECTED";
     public const string ReconnectTimeout = "ERR_RECONNECT_TIMEOUT";
     public const string RequestTimeout = "ERR_REQUEST_TIMEOUT";

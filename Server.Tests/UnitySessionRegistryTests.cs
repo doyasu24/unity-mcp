@@ -11,9 +11,10 @@ public sealed class UnitySessionRegistryTests
         var registry = new UnitySessionRegistry();
         var socket = new FakeWebSocket();
 
-        var result = registry.TryPromote(socket);
+        var result = registry.TryPromote(socket, "editor-a");
 
-        Assert.Equal(SessionPromotionResult.UnknownSocket, result);
+        Assert.Equal(SessionPromotionResult.UnknownSocket, result.Result);
+        Assert.Null(result.ReplacedSocket);
     }
 
     [Fact]
@@ -23,9 +24,10 @@ public sealed class UnitySessionRegistryTests
         var socket = new FakeWebSocket();
         registry.Register(socket);
 
-        var result = registry.TryPromote(socket);
+        var result = registry.TryPromote(socket, "editor-a");
 
-        Assert.Equal(SessionPromotionResult.Activated, result);
+        Assert.Equal(SessionPromotionResult.Activated, result.Result);
+        Assert.Null(result.ReplacedSocket);
         Assert.True(registry.IsActive(socket));
         Assert.Same(socket, registry.GetActiveSocket());
     }
@@ -38,13 +40,33 @@ public sealed class UnitySessionRegistryTests
         var second = new FakeWebSocket();
         registry.Register(first);
         registry.Register(second);
-        registry.TryPromote(first);
+        registry.TryPromote(first, "editor-a");
 
-        var result = registry.TryPromote(second);
+        var result = registry.TryPromote(second, "editor-b");
 
-        Assert.Equal(SessionPromotionResult.RejectedActiveExists, result);
+        Assert.Equal(SessionPromotionResult.RejectedActiveExists, result.Result);
+        Assert.Null(result.ReplacedSocket);
         Assert.True(registry.IsActive(first));
         Assert.False(registry.IsActive(second));
+    }
+
+    [Fact]
+    public void TryPromote_ReplacesActiveSocket_WhenEditorInstanceIdMatches()
+    {
+        var registry = new UnitySessionRegistry();
+        var first = new FakeWebSocket();
+        var second = new FakeWebSocket();
+        registry.Register(first);
+        registry.Register(second);
+        registry.TryPromote(first, "editor-a");
+
+        var result = registry.TryPromote(second, "editor-a");
+
+        Assert.Equal(SessionPromotionResult.ReplacedActiveSameEditor, result.Result);
+        Assert.Same(first, result.ReplacedSocket);
+        Assert.False(registry.IsActive(first));
+        Assert.True(registry.IsActive(second));
+        Assert.Same(second, registry.GetActiveSocket());
     }
 
     [Fact]
@@ -55,12 +77,13 @@ public sealed class UnitySessionRegistryTests
         var second = new FakeWebSocket();
         registry.Register(first);
         registry.Register(second);
-        registry.TryPromote(first);
+        registry.TryPromote(first, "editor-a");
         first.SetState(WebSocketState.Closed);
 
-        var result = registry.TryPromote(second);
+        var result = registry.TryPromote(second, "editor-b");
 
-        Assert.Equal(SessionPromotionResult.Activated, result);
+        Assert.Equal(SessionPromotionResult.Activated, result.Result);
+        Assert.Null(result.ReplacedSocket);
         Assert.True(registry.IsActive(second));
         Assert.False(registry.IsActive(first));
     }
@@ -73,7 +96,7 @@ public sealed class UnitySessionRegistryTests
         var second = new FakeWebSocket();
         registry.Register(first);
         registry.Register(second);
-        registry.TryPromote(first);
+        registry.TryPromote(first, "editor-a");
 
         var drained = registry.DrainAll();
 

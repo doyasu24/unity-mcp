@@ -8,7 +8,7 @@ public sealed class UnityBridgeShutdownTests
     public void BeginShutdown_TransitionsRuntimeStateToDisconnected_AndIsIdempotent()
     {
         var runtimeState = new RuntimeState();
-        runtimeState.OnConnected(EditorState.Ready);
+        runtimeState.OnConnected(EditorState.Ready, "conn-1", "editor-1");
         var bridge = new UnityBridge(runtimeState, new RequestScheduler(Constants.QueueMaxSize));
 
         bridge.BeginShutdown();

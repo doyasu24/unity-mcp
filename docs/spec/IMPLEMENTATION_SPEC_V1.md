@@ -161,12 +161,17 @@ Plugin:
 6. `hello` 交換成功で `ready`
 
 ### 5.4 `waiting_editor` 受理ポリシー
-1. `sync/job` は `request_reconnect_wait_ms` (2500ms) まで待機
+1. `sync/job` は待機理由に応じて次の上限まで待機する。
+   - `reconnecting`: `request_reconnect_wait_ms` (45000ms)
+   - `compiling|reloading`: `compile_grace_timeout_ms` (90000ms)
 2. 復帰成功時のみ実行
-3. 超過時 `ERR_EDITOR_NOT_READY` + `not_executed` 保証
-4. `submit_job` 超過時は `job_id` 未発行
-5. 待機中 cancel は即時 `cancelled`
-6. 復帰後の再開順序は FIFO
+3. 超過時は待機理由に応じたエラーを返す。
+   - `reconnecting`: `ERR_EDITOR_NOT_READY`
+   - `compiling|reloading`: `ERR_COMPILE_TIMEOUT`
+4. 3の失敗は `retryable=true`, `execution_guarantee=not_executed`, `recovery_action=retry_allowed` を返す。
+5. `submit_job` 超過時は `job_id` 未発行
+6. 待機中 cancel は即時 `cancelled`
+7. 復帰後の再開順序は FIFO
 
 ### 5.5 Shutdown
 1. `stopping` 遷移後は新規要求を受理しない
@@ -177,8 +182,9 @@ Plugin:
 ### 5.6 Plugin Port Reconfigure時の要求扱い
 1. `Unity MCP Settings` EditorWindow でのport再設定による切断は、Server側では通常の切断イベントとして扱う。
 2. `running` 要求は `request_reconnect_wait_ms` 以内の再接続復帰で継続し、超過時は `ERR_RECONNECT_TIMEOUT` で終了する。
-3. 上記失敗時に `execution_guarantee` を返す実装では `unknown` を設定する。
-4. `queued/waiting_editor_ready` 要求は接続復帰後にFIFOで再開する。
+3. 2の失敗は `retryable=false`, `execution_guarantee=unknown`, `recovery_action=inspect_state_then_retry_if_needed` を返す。
+4. Serverは `running` 要求を自動再送しない。
+5. `queued/waiting_editor_ready` 要求は接続復帰後にFIFOで再開する。
 
 ## 6. 通信仕様
 ### 6.0 MCP endpoint（Claude/Codex <-> Server）
@@ -209,16 +215,17 @@ Plugin:
 
 ### 6.3 接続シーケンス
 1. Pluginが `ws://127.0.0.1:{port}/unity` へ接続
-2. Plugin -> Server: `hello(plugin_version, state)`
-3. Server -> Plugin: `hello(server_version)`
+2. Plugin -> Server: `hello(plugin_version, editor_instance_id, plugin_session_id, connect_attempt_seq, state)`
+3. Server -> Plugin: `hello(server_version, connection_id, heartbeat_interval_ms, heartbeat_timeout_ms, heartbeat_miss_threshold)`
 4. Server -> Plugin: `capability`
 5. heartbeatは Server `ping` -> Plugin `pong`
 6. Serverは `hello` 受信完了まで接続を `pending` 扱いとし、既存 `active` セッションを切断しない。
-7. 既存 `active` がある状態で別接続が `hello` を送信した場合、Serverは既存セッションを維持し、新規接続を拒否する。
-8. 7の拒否時、Serverは `error` (`code=ERR_INVALID_REQUEST`, `message=\"another Unity websocket session is already active\"`) を返した後、新規接続をcloseする。
-9. 8を受信したPlugin（2つ目のEditor）は接続失敗として扱い、ユーザー向けに次の案内ログを出す。
+7. 既存 `active` がある状態で同一 `editor_instance_id` の接続が `hello` を送信した場合、Serverは既存 `active` を置換して新規接続を採用する。
+8. 既存 `active` がある状態で異なる `editor_instance_id` の接続が `hello` を送信した場合、Serverは既存セッションを維持し、新規接続を拒否する。
+9. 8の拒否時、Serverは `error` (`code=ERR_INVALID_REQUEST`, `message=\"another Unity websocket session is already active\"`) を返した後、新規接続をcloseする。
+10. 8を受信したPlugin（2つ目のEditor）は接続失敗として扱い、ユーザー向けに次の案内ログを出す。
    - `Connection rejected: multiple Unity Editors are trying to use the same MCP server. Close one Editor, or see README > Using Multiple Unity Editors.`
-10. 9の案内ログは同一競合状態の間は重複出力しない。`hello` 成功後に再び競合が起きた場合は再出力してよい。
+11. 10の案内ログは同一競合状態の間は重複出力しない。`hello` 成功後に再び競合が起きた場合は再出力してよい。
 
 ### 6.4 フィールド命名
 1. 相関キーは `request_id`
@@ -410,8 +417,8 @@ Rules:
 }
 ```
 Rules:
-1. v1で必須なのは `code` と `message` のみ。
-2. `retryable` と `details.execution_guarantee` は任意（厳密運用はDeferred）。
+1. `code`, `message`, `retryable`, `details.execution_guarantee`, `details.recovery_action` は必須。
+2. `execution_guarantee` は `not_executed|unknown` のいずれかを返す。
 
 ### 9.2 主要エラー
 1. 入力/契約: `ERR_INVALID_REQUEST`, `ERR_INVALID_PARAMS`, `ERR_UNKNOWN_COMMAND`
@@ -427,33 +434,36 @@ Rules:
 
 ### 9.3 再試行ルール
 1. `ERR_QUEUE_FULL` は指数バックオフ（例: 200ms開始、上限2000ms）で再試行する。
-2. `ERR_EDITOR_NOT_READY|ERR_UNITY_DISCONNECTED|ERR_RECONNECT_TIMEOUT|ERR_REQUEST_TIMEOUT|ERR_INVALID_RESPONSE` は再試行候補とする。
-3. それ以外は原則再試行しない（運用判断で上書き可）。
-4. v1ではサーバー側dedupeを有効化しないため、同一 `client_request_id` でも重複実行が起こり得る。
+2. `ERR_EDITOR_NOT_READY|ERR_COMPILE_TIMEOUT|ERR_UNITY_DISCONNECTED` は再試行候補とする（`retryable=true`）。
+3. `ERR_RECONNECT_TIMEOUT|ERR_REQUEST_TIMEOUT` は即時再試行を推奨しない（`retryable=false`）。
+4. 3のケースは `execution_guarantee=unknown` で返し、状態確認後のみ再試行する。
+5. v1ではサーバー側dedupeを有効化しないため、同一 `client_request_id` でも重複実行が起こり得る。
 
 ## 10. 運用既定値（内部固定）
 注記: `reconnect_*` はPlugin側再接続ロジックの既定値、Serverは待受を継続する。
 
-1. `reconnect_initial_ms = 100`
-2. `reconnect_multiplier = 1.7`
-3. `reconnect_max_backoff_ms = 1200`
-4. `reconnect_jitter_ratio = 0.1`
+1. `reconnect_initial_ms = 200`
+2. `reconnect_multiplier = 1.8`
+3. `reconnect_max_backoff_ms = 5000`
+4. `reconnect_jitter_ratio = 0.2`
 5. `heartbeat_interval_ms = 3000`
-6. `heartbeat_timeout_ms = 4500`
-7. `request_reconnect_wait_ms = 2500`
-8. `compile_grace_timeout_ms = 60000`
-9. `queue_max_size = 32`
-10. `max_message_bytes = 1048576`
-11. `mcp_http_path = /mcp`
-12. `unity_ws_path = /unity`
+6. `heartbeat_timeout_ms = 12000`
+7. `heartbeat_miss_threshold = 2`
+8. `request_reconnect_wait_ms = 45000`
+9. `compile_grace_timeout_ms = 90000`
+10. `queue_max_size = 32`
+11. `max_message_bytes = 1048576`
+12. `mcp_http_path = /mcp`
+13. `unity_ws_path = /unity`
 
 ## 11. ログ要件
 1. すべての要求に `request_id`
 2. 存在時 `client_request_id` / `job_id`
-3. 主要状態遷移ログ
+3. 接続ログには `connection_id`, `editor_instance_id`, `plugin_session_id`, `connect_attempt_seq` を付与する。
+4. 主要状態遷移ログ
    - `booting -> waiting_editor -> ready`
-4. `ERR_*` と主要コンテキスト（state/tool/request_id）を必ず記録する
-5. 複数Editor競合で接続拒否されたPluginは、ユーザー向けエラーログに「片方のEditorを閉じる」または「README > Using Multiple Unity Editors」を必ず含める。
+5. `ERR_*` と主要コンテキスト（state/tool/request_id）を必ず記録する
+6. 複数Editor競合で接続拒否されたPluginは、ユーザー向けエラーログに「片方のEditorを閉じる」または「README > Using Multiple Unity Editors」を必ず含める。
 
 ## 12. テスト要件（最小）
 ### 12.1 Unit

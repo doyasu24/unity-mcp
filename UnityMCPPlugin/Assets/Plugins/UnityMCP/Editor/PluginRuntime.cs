@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
+using UnityEngine;
 
 namespace UnityMcpPlugin
 {
@@ -12,12 +15,12 @@ namespace UnityMcpPlugin
         private const string UnityWsPath = "/unity";
         private const int MaxMessageBytes = 1024 * 1024;
 
-        private const int ReconnectInitialMs = 100;
-        private const double ReconnectMultiplier = 1.7;
-        private const int ReconnectMaxBackoffMs = 1200;
-        private const double ReconnectJitterRatio = 0.1;
+        private const int ReconnectInitialMs = 200;
+        private const double ReconnectMultiplier = 1.8;
+        private const int ReconnectMaxBackoffMs = 5000;
+        private const double ReconnectJitterRatio = 0.2;
 
-        private const int ReconfigureConnectTimeoutMs = 5000;
+        private const int ReconfigureConnectTimeoutMs = 10000;
         private const int ConnectivityWarningThrottleMs = 30000;
         private const int MultiEditorConflictReconnectDelayMs = 10000;
         private const int MultiEditorConflictWarningThrottleMs = 30000;
@@ -30,6 +33,10 @@ namespace UnityMcpPlugin
         private readonly JobExecutor _jobExecutor;
         private readonly CommandRouter _commandRouter;
         private readonly BridgeConnectionManager _connectionManager;
+        private readonly string _editorInstanceId;
+        private readonly string _pluginSessionId;
+        private readonly ConcurrentQueue<QueuedInboundMessage> _inboundMessages = new();
+        private readonly SemaphoreSlim _inboundMessageSignal = new(0, int.MaxValue);
 
         private int _desiredPort;
         private int _activePort;
@@ -42,6 +49,19 @@ namespace UnityMcpPlugin
 
         private bool _initialized;
         private bool _shuttingDown;
+        private ulong _currentConnectAttemptSeq;
+        private CancellationTokenSource _inboundProcessorCts;
+        private Task _inboundProcessorTask;
+
+        private readonly struct QueuedInboundMessage
+        {
+            internal QueuedInboundMessage(JObject message)
+            {
+                Message = message;
+            }
+
+            internal JObject Message { get; }
+        }
 
         private PluginRuntime()
         {
@@ -62,6 +82,11 @@ namespace UnityMcpPlugin
                 OnIncomingTextMessageAsync,
                 OnDisconnected,
                 OnSessionError);
+
+            _editorInstanceId = BuildEditorInstanceId();
+            _pluginSessionId = Guid.NewGuid().ToString("D");
+            _inboundProcessorCts = new CancellationTokenSource();
+            _inboundProcessorTask = Task.CompletedTask;
         }
 
         internal static PluginRuntime Instance { get; } = new();
@@ -95,9 +120,12 @@ namespace UnityMcpPlugin
                 _lastConnectivityWarningUtc = DateTimeOffset.MinValue;
                 _lastMultiEditorConflictWarningUtc = DateTimeOffset.MinValue;
                 _shuttingDown = false;
+                _currentConnectAttemptSeq = 0;
 
                 LogBuffer.Initialize();
                 MainThreadDispatcher.Initialize();
+                _inboundProcessorCts = new CancellationTokenSource();
+                _inboundProcessorTask = Task.Run(() => InboundMessageLoopAsync(_inboundProcessorCts.Token));
                 _connectionManager.Start();
 
                 _initialized = true;
@@ -119,6 +147,7 @@ namespace UnityMcpPlugin
             }
 
             _connectionManager.Stop(TimeSpan.FromSeconds(2));
+            StopInboundMessageProcessor();
             LogBuffer.Shutdown();
             MainThreadDispatcher.Shutdown();
 
@@ -132,6 +161,7 @@ namespace UnityMcpPlugin
                 _lastConnectivityWarningUtc = DateTimeOffset.MinValue;
                 _lastMultiEditorConflictWarningUtc = DateTimeOffset.MinValue;
                 _shuttingDown = false;
+                _currentConnectAttemptSeq = 0;
             }
 
             PluginLogger.UserInfo("Unity MCP plugin stopped");
@@ -245,13 +275,14 @@ namespace UnityMcpPlugin
             }
         }
 
-        private async Task OnConnectedAsync(int port, CancellationToken cancellationToken)
+        private async Task OnConnectedAsync(int port, ulong connectAttemptSeq, CancellationToken cancellationToken)
         {
             var conflictActive = false;
             lock (_gate)
             {
                 _activePort = port;
                 conflictActive = _multiEditorConflictActive;
+                _currentConnectAttemptSeq = connectAttemptSeq;
             }
 
             _editorStateTracker.ResetSequence();
@@ -274,7 +305,35 @@ namespace UnityMcpPlugin
 
         private async Task OnIncomingTextMessageAsync(int port, string raw, CancellationToken cancellationToken)
         {
-            await HandleIncomingMessageAsync(raw, cancellationToken);
+            if (!Payload.TryParseDocument(raw, out var message))
+            {
+                PluginLogger.DevWarn("Received invalid JSON message");
+                return;
+            }
+
+            var protocolVersion = Payload.GetInt(message, "protocol_version");
+            var requestId = Payload.GetString(message, "request_id");
+            if (protocolVersion != Wire.ProtocolVersion)
+            {
+                await SendProtocolErrorAsync(requestId, "ERR_INVALID_REQUEST", "protocol_version mismatch", cancellationToken);
+                _connectionManager.CloseCurrentSocket("protocol-version-mismatch");
+                return;
+            }
+
+            var type = Payload.GetString(message, "type");
+            if (string.IsNullOrEmpty(type))
+            {
+                await SendProtocolErrorAsync(requestId, "ERR_INVALID_REQUEST", "type is required", cancellationToken);
+                return;
+            }
+
+            if (string.Equals(type, "ping", StringComparison.Ordinal))
+            {
+                await SendPongAsync(cancellationToken);
+                return;
+            }
+
+            EnqueueInboundMessage(message);
         }
 
         private void OnDisconnected(int port)
@@ -338,45 +397,45 @@ namespace UnityMcpPlugin
             PluginLogger.DevWarn("Bridge session ended with error", ("port", port), ("error", ex.Message));
         }
 
-        private async Task HandleIncomingMessageAsync(string raw, CancellationToken cancellationToken)
+        private async Task InboundMessageLoopAsync(CancellationToken cancellationToken)
         {
-            if (!Payload.TryParseDocument(raw, out var document))
+            try
             {
-                PluginLogger.DevWarn("Received invalid JSON message");
-                return;
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    await _inboundMessageSignal.WaitAsync(cancellationToken);
+
+                    while (_inboundMessages.TryDequeue(out var queued))
+                    {
+                        await HandleQueuedIncomingMessageAsync(queued.Message, cancellationToken);
+                    }
+                }
             }
-
-            var message = document;
-
-            var protocolVersion = Payload.GetInt(message, "protocol_version");
-            var requestId = Payload.GetString(message, "request_id");
-            if (protocolVersion != Wire.ProtocolVersion)
+            catch (OperationCanceledException)
             {
-                await SendProtocolErrorAsync(requestId, "ERR_INVALID_REQUEST", "protocol_version mismatch", cancellationToken);
-                _connectionManager.CloseCurrentSocket("protocol-version-mismatch");
-                return;
+                // expected
             }
+            catch (Exception ex)
+            {
+                PluginLogger.DevWarn("Inbound message loop failed", ("error", ex.Message));
+            }
+        }
 
+        private async Task HandleQueuedIncomingMessageAsync(JObject message, CancellationToken cancellationToken)
+        {
             var type = Payload.GetString(message, "type");
             if (string.IsNullOrEmpty(type))
             {
-                await SendProtocolErrorAsync(requestId, "ERR_INVALID_REQUEST", "type is required", cancellationToken);
                 return;
             }
 
             if (string.Equals(type, "hello", StringComparison.Ordinal))
             {
-                OnServerHelloReceived();
+                OnServerHelloReceived(message);
             }
 
             if (string.Equals(type, "error", StringComparison.Ordinal) && TryHandleServerErrorMessage(message))
             {
-                return;
-            }
-
-            if (string.Equals(type, "ping", StringComparison.Ordinal))
-            {
-                await SendPongAsync(cancellationToken);
                 return;
             }
 
@@ -393,6 +452,9 @@ namespace UnityMcpPlugin
                 type = "hello",
                 protocol_version = Wire.ProtocolVersion,
                 plugin_version = Wire.PluginVersion,
+                editor_instance_id = _editorInstanceId,
+                plugin_session_id = _pluginSessionId,
+                connect_attempt_seq = _currentConnectAttemptSeq,
                 state = Wire.ToWireState(snapshot.State),
             };
 
@@ -478,15 +540,35 @@ namespace UnityMcpPlugin
             }
         }
 
+        private static string BuildEditorInstanceId()
+        {
+            var processId = -1;
+            try
+            {
+                processId = Process.GetCurrentProcess().Id;
+            }
+            catch
+            {
+                // no-op
+            }
+
+            var projectPath = Application.dataPath ?? string.Empty;
+            return $"{processId}:{projectPath}";
+        }
+
         private EditorSnapshot GetEditorSnapshot()
         {
             var connected = _connectionManager.GetConnectedPort() > 0;
             return _editorStateTracker.Snapshot(connected);
         }
 
-        private void OnServerHelloReceived()
+        private void OnServerHelloReceived(JObject message)
         {
             var connectedPort = _connectionManager.GetConnectedPort();
+            var connectionId = Payload.GetString(message, "connection_id");
+            var heartbeatIntervalMs = Payload.GetInt(message, "heartbeat_interval_ms");
+            var heartbeatTimeoutMs = Payload.GetInt(message, "heartbeat_timeout_ms");
+            var heartbeatMissThreshold = Payload.GetInt(message, "heartbeat_miss_threshold");
             lock (_gate)
             {
                 _multiEditorConflictAnnounced = false;
@@ -496,7 +578,56 @@ namespace UnityMcpPlugin
 
             _connectionManager.ClearReconnectDelay();
             ResetConnectivityIssueTracking();
-            PluginLogger.UserInfo("Connected to server", ("port", connectedPort));
+            PluginLogger.UserInfo("Connected to server", ("port", connectedPort), ("connection_id", connectionId));
+            PluginLogger.DevInfo(
+                "Server heartbeat policy updated",
+                ("connection_id", connectionId),
+                ("heartbeat_interval_ms", heartbeatIntervalMs),
+                ("heartbeat_timeout_ms", heartbeatTimeoutMs),
+                ("heartbeat_miss_threshold", heartbeatMissThreshold));
+        }
+
+        private void EnqueueInboundMessage(JObject message)
+        {
+            _inboundMessages.Enqueue(new QueuedInboundMessage(message));
+            try
+            {
+                _inboundMessageSignal.Release();
+            }
+            catch
+            {
+                // no-op
+            }
+        }
+
+        private void StopInboundMessageProcessor()
+        {
+            try
+            {
+                _inboundProcessorCts.Cancel();
+            }
+            catch
+            {
+                // no-op
+            }
+
+            try
+            {
+                _inboundProcessorTask.Wait(500);
+            }
+            catch
+            {
+                // no-op
+            }
+
+            while (_inboundMessages.TryDequeue(out _))
+            {
+                // drop pending inbound messages during shutdown
+            }
+
+            _inboundProcessorCts.Dispose();
+            _inboundProcessorTask = Task.CompletedTask;
+            _inboundProcessorCts = new CancellationTokenSource();
         }
 
         private bool TryHandleServerErrorMessage(JObject message)

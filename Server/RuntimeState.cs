@@ -19,6 +19,14 @@ internal enum EditorState
     Reloading,
 }
 
+internal enum WaitingReason
+{
+    None,
+    Reconnecting,
+    Compiling,
+    Reloading,
+}
+
 internal enum JobState
 {
     Queued,
@@ -86,21 +94,39 @@ internal static class WireState
     }
 
     public static bool IsTerminal(JobState state) => state is JobState.Succeeded or JobState.Failed or JobState.Timeout or JobState.Cancelled;
+
+    public static string ToWire(this WaitingReason reason) => reason switch
+    {
+        WaitingReason.None => "none",
+        WaitingReason.Reconnecting => "reconnecting",
+        WaitingReason.Compiling => "compiling",
+        WaitingReason.Reloading => "reloading",
+        _ => "reconnecting",
+    };
 }
 
 internal sealed record RuntimeSnapshot(
     [property: JsonPropertyName("server_state")] string ServerState,
     [property: JsonPropertyName("editor_state")] string EditorState,
     [property: JsonPropertyName("connected")] bool Connected,
-    [property: JsonPropertyName("last_editor_status_seq")] ulong LastEditorStatusSeq);
+    [property: JsonPropertyName("last_editor_status_seq")] ulong LastEditorStatusSeq,
+    [property: JsonPropertyName("waiting_reason")] string WaitingReason,
+    [property: JsonPropertyName("last_pong_utc")] string? LastPongUtc,
+    [property: JsonPropertyName("active_connection_id")] string? ActiveConnectionId,
+    [property: JsonPropertyName("editor_instance_id")] string? EditorInstanceId);
 
 internal sealed class RuntimeState
 {
     private readonly object _gate = new();
     private ServerState _serverState = ServerState.Booting;
     private EditorState _editorState = EditorState.Unknown;
+    private WaitingReason _waitingReason = WaitingReason.Reconnecting;
     private bool _connected;
     private ulong _lastEditorStatusSeq;
+    private DateTimeOffset _lastEditorStateAtUtc = DateTimeOffset.UtcNow;
+    private DateTimeOffset? _lastPongUtc;
+    private string? _activeConnectionId;
+    private string? _activeEditorInstanceId;
 
     public event Action? StateChanged;
 
@@ -108,11 +134,16 @@ internal sealed class RuntimeState
     {
         lock (_gate)
         {
+            var waitingReason = GetEffectiveWaitingReasonLocked(DateTimeOffset.UtcNow);
             return new RuntimeSnapshot(
                 _serverState.ToWire(),
                 _connected ? _editorState.ToWire() : EditorState.Unknown.ToWire(),
                 _connected,
-                _lastEditorStatusSeq);
+                _lastEditorStatusSeq,
+                waitingReason.ToWire(),
+                _lastPongUtc?.ToString("O"),
+                _activeConnectionId,
+                _activeEditorInstanceId);
         }
     }
 
@@ -142,13 +173,26 @@ internal sealed class RuntimeState
         }
     }
 
-    public void OnConnected(EditorState initialEditorState)
+    public WaitingReason GetEffectiveWaitingReason()
     {
+        lock (_gate)
+        {
+            return GetEffectiveWaitingReasonLocked(DateTimeOffset.UtcNow);
+        }
+    }
+
+    public void OnConnected(EditorState initialEditorState, string connectionId, string? editorInstanceId)
+    {
+        var now = DateTimeOffset.UtcNow;
         lock (_gate)
         {
             _connected = true;
             _editorState = initialEditorState;
             _serverState = ServerState.Ready;
+            _waitingReason = WaitingReason.None;
+            _lastEditorStateAtUtc = now;
+            _activeConnectionId = connectionId;
+            _activeEditorInstanceId = NormalizeEditorInstanceId(editorInstanceId);
         }
 
         StateChanged?.Invoke();
@@ -158,8 +202,11 @@ internal sealed class RuntimeState
     {
         lock (_gate)
         {
+            _waitingReason = ResolveDisconnectedWaitingReasonLocked(DateTimeOffset.UtcNow);
             _connected = false;
             _editorState = EditorState.Unknown;
+            _activeConnectionId = null;
+            _activeEditorInstanceId = null;
             if (_serverState is not ServerState.Stopping and not ServerState.Stopped)
             {
                 _serverState = ServerState.WaitingEditor;
@@ -172,12 +219,14 @@ internal sealed class RuntimeState
     public void OnEditorStatus(EditorState state, ulong seq)
     {
         var changed = false;
+        var now = DateTimeOffset.UtcNow;
         lock (_gate)
         {
             if (seq > _lastEditorStatusSeq)
             {
                 _lastEditorStatusSeq = seq;
                 _editorState = state;
+                _lastEditorStateAtUtc = now;
                 changed = true;
             }
         }
@@ -190,11 +239,15 @@ internal sealed class RuntimeState
 
     public void OnPong(EditorState? state, ulong? seq)
     {
+        var now = DateTimeOffset.UtcNow;
         lock (_gate)
         {
+            _lastPongUtc = now;
+
             if (state.HasValue)
             {
                 _editorState = state.Value;
+                _lastEditorStateAtUtc = now;
             }
 
             if (seq.HasValue && seq.Value > _lastEditorStatusSeq)
@@ -244,5 +297,49 @@ internal sealed class RuntimeState
         {
             StateChanged -= Handler;
         }
+    }
+
+    private WaitingReason GetEffectiveWaitingReasonLocked(DateTimeOffset now)
+    {
+        if (_connected)
+        {
+            return _editorState switch
+            {
+                EditorState.Compiling => WaitingReason.Compiling,
+                EditorState.Reloading => WaitingReason.Reloading,
+                _ => WaitingReason.None,
+            };
+        }
+
+        if (_waitingReason is WaitingReason.Compiling or WaitingReason.Reloading)
+        {
+            var age = now - _lastEditorStateAtUtc;
+            if (age <= TimeSpan.FromMilliseconds(Constants.CompileGraceTimeoutMs))
+            {
+                return _waitingReason;
+            }
+        }
+
+        return WaitingReason.Reconnecting;
+    }
+
+    private WaitingReason ResolveDisconnectedWaitingReasonLocked(DateTimeOffset now)
+    {
+        var waitingReason = _editorState switch
+        {
+            EditorState.Compiling => WaitingReason.Compiling,
+            EditorState.Reloading => WaitingReason.Reloading,
+            _ => WaitingReason.Reconnecting,
+        };
+
+        _lastEditorStateAtUtc = now;
+        return waitingReason;
+    }
+
+    private static string? NormalizeEditorInstanceId(string? editorInstanceId)
+    {
+        return string.IsNullOrWhiteSpace(editorInstanceId)
+            ? null
+            : editorInstanceId.Trim();
     }
 }

@@ -6,9 +6,12 @@ internal enum SessionPromotionResult
 {
     Activated,
     AlreadyActive,
+    ReplacedActiveSameEditor,
     RejectedActiveExists,
     UnknownSocket,
 }
+
+internal readonly record struct SessionPromotionOutcome(SessionPromotionResult Result, WebSocket? ReplacedSocket);
 
 internal readonly record struct SessionRemovalResult(bool WasKnown, bool WasActive);
 
@@ -17,6 +20,7 @@ internal sealed class UnitySessionRegistry
     private readonly object _gate = new();
     private readonly HashSet<WebSocket> _registeredSockets = new();
     private WebSocket? _activeSocket;
+    private string? _activeEditorInstanceId;
 
     public void Register(WebSocket socket)
     {
@@ -26,32 +30,44 @@ internal sealed class UnitySessionRegistry
         }
     }
 
-    public SessionPromotionResult TryPromote(WebSocket socket)
+    public SessionPromotionOutcome TryPromote(WebSocket socket, string? editorInstanceId)
     {
+        var normalizedEditorInstanceId = NormalizeEditorInstanceId(editorInstanceId);
         lock (_gate)
         {
             if (!_registeredSockets.Contains(socket))
             {
-                return SessionPromotionResult.UnknownSocket;
+                return new SessionPromotionOutcome(SessionPromotionResult.UnknownSocket, null);
             }
 
             if (_activeSocket is not null && _activeSocket.State != WebSocketState.Open)
             {
                 _activeSocket = null;
+                _activeEditorInstanceId = null;
             }
 
             if (ReferenceEquals(_activeSocket, socket))
             {
-                return SessionPromotionResult.AlreadyActive;
+                _activeEditorInstanceId = normalizedEditorInstanceId;
+                return new SessionPromotionOutcome(SessionPromotionResult.AlreadyActive, null);
             }
 
             if (_activeSocket is not null)
             {
-                return SessionPromotionResult.RejectedActiveExists;
+                if (IsSameEditorInstance(normalizedEditorInstanceId))
+                {
+                    var replacedSocket = _activeSocket;
+                    _activeSocket = socket;
+                    _activeEditorInstanceId = normalizedEditorInstanceId;
+                    return new SessionPromotionOutcome(SessionPromotionResult.ReplacedActiveSameEditor, replacedSocket);
+                }
+
+                return new SessionPromotionOutcome(SessionPromotionResult.RejectedActiveExists, null);
             }
 
             _activeSocket = socket;
-            return SessionPromotionResult.Activated;
+            _activeEditorInstanceId = normalizedEditorInstanceId;
+            return new SessionPromotionOutcome(SessionPromotionResult.Activated, null);
         }
     }
 
@@ -85,6 +101,7 @@ internal sealed class UnitySessionRegistry
             if (wasActive)
             {
                 _activeSocket = null;
+                _activeEditorInstanceId = null;
             }
 
             return new SessionRemovalResult(wasKnown, wasActive);
@@ -98,7 +115,22 @@ internal sealed class UnitySessionRegistry
             var sockets = _registeredSockets.ToList();
             _registeredSockets.Clear();
             _activeSocket = null;
+            _activeEditorInstanceId = null;
             return sockets;
         }
+    }
+
+    private bool IsSameEditorInstance(string? editorInstanceId)
+    {
+        return !string.IsNullOrWhiteSpace(_activeEditorInstanceId)
+            && !string.IsNullOrWhiteSpace(editorInstanceId)
+            && string.Equals(_activeEditorInstanceId, editorInstanceId, StringComparison.Ordinal);
+    }
+
+    private static string? NormalizeEditorInstanceId(string? editorInstanceId)
+    {
+        return string.IsNullOrWhiteSpace(editorInstanceId)
+            ? null
+            : editorInstanceId.Trim();
     }
 }

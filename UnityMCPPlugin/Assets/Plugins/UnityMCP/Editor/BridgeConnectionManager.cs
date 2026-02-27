@@ -28,7 +28,7 @@ namespace UnityMcpPlugin
         private readonly double _reconnectJitterRatio;
 
         private readonly Func<int> _desiredPortProvider;
-        private readonly Func<int, CancellationToken, Task> _onConnectedAsync;
+        private readonly Func<int, ulong, CancellationToken, Task> _onConnectedAsync;
         private readonly Func<int, string, CancellationToken, Task> _onTextMessageAsync;
         private readonly Action<int> _onDisconnected;
         private readonly Action<int, Exception> _onSessionError;
@@ -40,6 +40,7 @@ namespace UnityMcpPlugin
         private int _connectedPort = -1;
         private bool _started;
         private DateTimeOffset _reconnectNotBeforeUtc = DateTimeOffset.MinValue;
+        private long _connectAttemptSeq;
 
         private ClientWebSocket _socket;
 
@@ -55,7 +56,7 @@ namespace UnityMcpPlugin
             int reconnectMaxBackoffMs,
             double reconnectJitterRatio,
             Func<int> desiredPortProvider,
-            Func<int, CancellationToken, Task> onConnectedAsync,
+            Func<int, ulong, CancellationToken, Task> onConnectedAsync,
             Func<int, string, CancellationToken, Task> onTextMessageAsync,
             Action<int> onDisconnected,
             Action<int, Exception> onSessionError)
@@ -279,9 +280,10 @@ namespace UnityMcpPlugin
             while (!cancellationToken.IsCancellationRequested)
             {
                 var port = _desiredPortProvider();
+                var connectAttemptSeq = (ulong)Interlocked.Increment(ref _connectAttemptSeq);
                 try
                 {
-                    await RunSessionAsync(port, cancellationToken);
+                    await RunSessionAsync(port, connectAttemptSeq, cancellationToken);
                     reconnectBackoffMs = _reconnectInitialMs;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -309,7 +311,7 @@ namespace UnityMcpPlugin
             }
         }
 
-        private async Task RunSessionAsync(int port, CancellationToken lifecycleToken)
+        private async Task RunSessionAsync(int port, ulong connectAttemptSeq, CancellationToken lifecycleToken)
         {
             using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(lifecycleToken);
             lock (_gate)
@@ -336,7 +338,7 @@ namespace UnityMcpPlugin
                 _connectedPort = port;
             }
 
-            await _onConnectedAsync(port, sessionCts.Token);
+            await _onConnectedAsync(port, connectAttemptSeq, sessionCts.Token);
             RaiseConnectedPortChanged(port);
 
             try

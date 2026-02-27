@@ -47,6 +47,22 @@ public sealed class ToolResultFormatterTests
         var structured = Assert.IsType<JsonObject>(response["structuredContent"]);
         Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
         Assert.Equal("invalid", structured["message"]?.GetValue<string>());
+        Assert.False(structured["retryable"]?.GetValue<bool>());
         Assert.Equal("mode", structured["details"]?["field"]?.GetValue<string>());
+        Assert.Equal(ExecutionGuarantees.Unknown, structured["details"]?["execution_guarantee"]?.GetValue<string>());
+        Assert.Equal(RecoveryActions.InspectStateThenRetryIfNeeded, structured["details"]?["recovery_action"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public void Error_MapsEditorNotReadyToRetryableNotExecuted()
+    {
+        var error = new McpException(ErrorCodes.EditorNotReady, "not ready");
+
+        var response = ToolResultFormatter.Error(error);
+
+        var structured = Assert.IsType<JsonObject>(response["structuredContent"]);
+        Assert.True(structured["retryable"]?.GetValue<bool>());
+        Assert.Equal(ExecutionGuarantees.NotExecuted, structured["details"]?["execution_guarantee"]?.GetValue<string>());
+        Assert.Equal(RecoveryActions.RetryAllowed, structured["details"]?["recovery_action"]?.GetValue<string>());
     }
 }
