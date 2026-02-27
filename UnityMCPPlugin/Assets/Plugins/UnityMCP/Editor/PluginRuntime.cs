@@ -19,6 +19,8 @@ namespace UnityMcpPlugin
 
         private const int ReconfigureConnectTimeoutMs = 5000;
         private const int ConnectivityWarningThrottleMs = 30000;
+        private const int MultiEditorConflictReconnectDelayMs = 10000;
+        private const int MultiEditorConflictWarningThrottleMs = 30000;
 
         private readonly object _gate = new();
         private readonly SemaphoreSlim _reconfigureLock = new(1, 1);
@@ -34,7 +36,9 @@ namespace UnityMcpPlugin
         private int _consecutiveConnectFailures;
         private bool _connectivityIssueAnnounced;
         private bool _multiEditorConflictAnnounced;
+        private bool _multiEditorConflictActive;
         private DateTimeOffset _lastConnectivityWarningUtc;
+        private DateTimeOffset _lastMultiEditorConflictWarningUtc;
 
         private bool _initialized;
         private bool _shuttingDown;
@@ -87,7 +91,9 @@ namespace UnityMcpPlugin
                 _consecutiveConnectFailures = 0;
                 _connectivityIssueAnnounced = false;
                 _multiEditorConflictAnnounced = false;
+                _multiEditorConflictActive = false;
                 _lastConnectivityWarningUtc = DateTimeOffset.MinValue;
+                _lastMultiEditorConflictWarningUtc = DateTimeOffset.MinValue;
                 _shuttingDown = false;
 
                 LogBuffer.Initialize();
@@ -122,7 +128,9 @@ namespace UnityMcpPlugin
                 _consecutiveConnectFailures = 0;
                 _connectivityIssueAnnounced = false;
                 _multiEditorConflictAnnounced = false;
+                _multiEditorConflictActive = false;
                 _lastConnectivityWarningUtc = DateTimeOffset.MinValue;
+                _lastMultiEditorConflictWarningUtc = DateTimeOffset.MinValue;
                 _shuttingDown = false;
             }
 
@@ -219,6 +227,7 @@ namespace UnityMcpPlugin
                     _activePort = newPort;
                 }
 
+                _connectionManager.ClearReconnectDelay();
                 _connectionManager.RequestReconnect();
                 PluginLogger.UserInfo(
                     "Port setting applied. Reconnecting in background.",
@@ -238,9 +247,11 @@ namespace UnityMcpPlugin
 
         private async Task OnConnectedAsync(int port, CancellationToken cancellationToken)
         {
+            var conflictActive = false;
             lock (_gate)
             {
                 _activePort = port;
+                conflictActive = _multiEditorConflictActive;
             }
 
             _editorStateTracker.ResetSequence();
@@ -255,7 +266,10 @@ namespace UnityMcpPlugin
                 PluginLogger.DevWarn("Initial editor_status send failed", ("port", port), ("error", ex.Message));
             }
 
-            PluginLogger.DevInfo("Bridge transport connected", ("port", port), ("uri", $"ws://{Host}:{port}{UnityWsPath}"));
+            if (!conflictActive)
+            {
+                PluginLogger.DevInfo("Bridge transport connected", ("port", port), ("uri", $"ws://{Host}:{port}{UnityWsPath}"));
+            }
         }
 
         private async Task OnIncomingTextMessageAsync(int port, string raw, CancellationToken cancellationToken)
@@ -265,12 +279,20 @@ namespace UnityMcpPlugin
 
         private void OnDisconnected(int port)
         {
+            var conflictActive = false;
             lock (_gate)
             {
                 if (_shuttingDown)
                 {
                     return;
                 }
+
+                conflictActive = _multiEditorConflictActive;
+            }
+
+            if (conflictActive)
+            {
+                return;
             }
 
             PluginLogger.DevWarn("Bridge disconnected", ("port", port));
@@ -291,6 +313,7 @@ namespace UnityMcpPlugin
 
                 if (offline)
                 {
+                    _multiEditorConflictActive = false;
                     _consecutiveConnectFailures += 1;
                     attempt = _consecutiveConnectFailures;
                     shouldWarnUser = ShouldEmitConnectivityWarningLocked();
@@ -467,8 +490,11 @@ namespace UnityMcpPlugin
             lock (_gate)
             {
                 _multiEditorConflictAnnounced = false;
+                _multiEditorConflictActive = false;
+                _lastMultiEditorConflictWarningUtc = DateTimeOffset.MinValue;
             }
 
+            _connectionManager.ClearReconnectDelay();
             ResetConnectivityIssueTracking();
             PluginLogger.UserInfo("Connected to server", ("port", connectedPort));
         }
@@ -485,6 +511,7 @@ namespace UnityMcpPlugin
             }
 
             var shouldLogUser = false;
+            var shouldLogDev = false;
             var connectedPort = _connectionManager.GetConnectedPort();
             lock (_gate)
             {
@@ -493,6 +520,9 @@ namespace UnityMcpPlugin
                     _multiEditorConflictAnnounced = true;
                     shouldLogUser = true;
                 }
+
+                shouldLogDev = !_multiEditorConflictActive || ShouldEmitMultiEditorConflictWarningLocked();
+                _multiEditorConflictActive = true;
             }
 
             if (shouldLogUser)
@@ -502,12 +532,16 @@ namespace UnityMcpPlugin
                     ("port", connectedPort));
             }
 
-            PluginLogger.DevWarn(
-                "Server rejected Unity session because another editor is active",
-                ("port", connectedPort),
-                ("code", code),
-                ("message", errorMessage));
+            if (shouldLogDev)
+            {
+                PluginLogger.DevWarn(
+                    "Server rejected Unity session because another editor is active",
+                    ("port", connectedPort),
+                    ("code", code),
+                    ("message", errorMessage));
+            }
 
+            _connectionManager.SetReconnectDelay(TimeSpan.FromMilliseconds(MultiEditorConflictReconnectDelayMs));
             _connectionManager.CloseCurrentSocket("session-already-active");
             return true;
         }
@@ -567,6 +601,18 @@ namespace UnityMcpPlugin
             }
 
             _lastConnectivityWarningUtc = now;
+            return true;
+        }
+
+        private bool ShouldEmitMultiEditorConflictWarningLocked()
+        {
+            var now = DateTimeOffset.UtcNow;
+            if ((now - _lastMultiEditorConflictWarningUtc).TotalMilliseconds < MultiEditorConflictWarningThrottleMs)
+            {
+                return false;
+            }
+
+            _lastMultiEditorConflictWarningUtc = now;
             return true;
         }
     }

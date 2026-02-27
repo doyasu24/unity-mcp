@@ -11,6 +11,7 @@ namespace UnityMcpServer;
 internal sealed class UnityBridge
 {
     private static readonly TimeSpan JobRetention = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan ActiveSessionRejectLogThrottle = TimeSpan.FromSeconds(30);
     private const int MaxRetainedJobs = 512;
 
     private sealed class PendingRequest : IDisposable
@@ -41,10 +42,13 @@ internal sealed class UnityBridge
     private readonly UnitySessionRegistry _sessionRegistry = new();
     private readonly ConcurrentDictionary<string, PendingRequest> _pendingRequests = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, JobRecord> _jobs = new(StringComparer.Ordinal);
+    private readonly object _activeSessionRejectLogGate = new();
 
     private CancellationTokenSource? _heartbeatCts;
     private long _lastPongUtcTicks;
     private int _shutdownRequested;
+    private DateTimeOffset _lastActiveSessionRejectLogUtc;
+    private int _suppressedActiveSessionRejectLogs;
 
     public UnityBridge(RuntimeState runtimeState, RequestScheduler scheduler)
     {
@@ -550,6 +554,7 @@ internal sealed class UnityBridge
         var promotion = _sessionRegistry.TryPromote(socket);
         if (promotion == SessionPromotionResult.RejectedActiveExists)
         {
+            LogRejectedActiveSessionWarning();
             await SendRawAsync(socket, new JsonObject
             {
                 ["type"] = "error",
@@ -592,6 +597,7 @@ internal sealed class UnityBridge
             Interlocked.Exchange(ref _lastPongUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
             _runtimeState.OnConnected(initialState);
             StartHeartbeat(socket);
+            Logger.Info("Unity websocket session activated", ("editor_state", initialState.ToWire()));
         }
     }
 
@@ -769,7 +775,7 @@ internal sealed class UnityBridge
         _runtimeState.OnDisconnected();
         if (wasConnected && !IsShuttingDown())
         {
-            Logger.Warn("Unity websocket disconnected");
+            Logger.Info("Unity websocket session disconnected");
         }
     }
 
@@ -807,6 +813,43 @@ internal sealed class UnityBridge
     {
         _jobs[jobId] = new JobRecord(state, JsonHelpers.CloneNode(result), DateTimeOffset.UtcNow);
         PruneJobs();
+    }
+
+    private void LogRejectedActiveSessionWarning()
+    {
+        int suppressed = 0;
+        var shouldEmit = false;
+        var now = DateTimeOffset.UtcNow;
+        lock (_activeSessionRejectLogGate)
+        {
+            var sinceLast = now - _lastActiveSessionRejectLogUtc;
+            if (_lastActiveSessionRejectLogUtc != default && sinceLast < ActiveSessionRejectLogThrottle)
+            {
+                _suppressedActiveSessionRejectLogs += 1;
+                return;
+            }
+
+            shouldEmit = true;
+            suppressed = _suppressedActiveSessionRejectLogs;
+            _suppressedActiveSessionRejectLogs = 0;
+            _lastActiveSessionRejectLogUtc = now;
+        }
+
+        if (!shouldEmit)
+        {
+            return;
+        }
+
+        if (suppressed > 0)
+        {
+            Logger.Warn(
+                "Rejected Unity websocket session because another editor is active",
+                ("suppressed", suppressed),
+                ("throttle_sec", (int)ActiveSessionRejectLogThrottle.TotalSeconds));
+            return;
+        }
+
+        Logger.Warn("Rejected Unity websocket session because another editor is active");
     }
 
     private void PruneJobs()

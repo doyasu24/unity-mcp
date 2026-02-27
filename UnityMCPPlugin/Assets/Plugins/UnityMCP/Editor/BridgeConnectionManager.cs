@@ -39,6 +39,7 @@ namespace UnityMcpPlugin
 
         private int _connectedPort = -1;
         private bool _started;
+        private DateTimeOffset _reconnectNotBeforeUtc = DateTimeOffset.MinValue;
 
         private ClientWebSocket _socket;
 
@@ -152,6 +153,31 @@ namespace UnityMcpPlugin
             catch
             {
                 // no-op
+            }
+        }
+
+        internal void SetReconnectDelay(TimeSpan minimumDelay)
+        {
+            if (minimumDelay <= TimeSpan.Zero)
+            {
+                return;
+            }
+
+            lock (_gate)
+            {
+                var candidate = DateTimeOffset.UtcNow + minimumDelay;
+                if (candidate > _reconnectNotBeforeUtc)
+                {
+                    _reconnectNotBeforeUtc = candidate;
+                }
+            }
+        }
+
+        internal void ClearReconnectDelay()
+        {
+            lock (_gate)
+            {
+                _reconnectNotBeforeUtc = DateTimeOffset.MinValue;
             }
         }
 
@@ -271,7 +297,7 @@ namespace UnityMcpPlugin
                     break;
                 }
 
-                var delayMs = ApplyJitter(reconnectBackoffMs);
+                var delayMs = Math.Max(ApplyJitter(reconnectBackoffMs), GetReconnectDelayFloorMs());
                 reconnectBackoffMs = Math.Min(reconnectBackoffMs * _reconnectMultiplier, _reconnectMaxBackoffMs);
 
                 var reconnectedImmediately = await WaitReconnectSignalOrDelayAsync(delayMs, cancellationToken);
@@ -441,6 +467,20 @@ namespace UnityMcpPlugin
             {
                 var jitter = (_random.NextDouble() * 2.0 - 1.0) * _reconnectJitterRatio;
                 return Math.Max(0, baseMs * (1.0 + jitter));
+            }
+        }
+
+        private double GetReconnectDelayFloorMs()
+        {
+            lock (_gate)
+            {
+                var now = DateTimeOffset.UtcNow;
+                if (_reconnectNotBeforeUtc <= now)
+                {
+                    return 0;
+                }
+
+                return (_reconnectNotBeforeUtc - now).TotalMilliseconds;
             }
         }
 
