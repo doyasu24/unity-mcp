@@ -49,7 +49,7 @@ graph LR
 
 Add to Package Manager:
 
-`https://github.com/doyasu24/unity-mcp.git?path=Assets/Plugins/UnityMCP#v0.1.0`
+`https://github.com/doyasu24/unity-mcp.git?path=UnityMCPPlugin/Assets/Plugins/UnityMCP#v0.1.0`
 
 ### Claude Code Setup
 
