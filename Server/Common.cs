@@ -16,9 +16,8 @@ internal static class Constants
     public const int ProtocolVersion = 1;
     public const int QueueMaxSize = 32;
     public const int MaxMessageBytes = 1024 * 1024;
-    public const int HeartbeatIntervalMs = 3000;
-    public const int HeartbeatTimeoutMs = 12000;
-    public const int HeartbeatMissThreshold = 2;
+    public const int StaleConnectionTimeoutMs = 15_000;
+    public const int EditorStatusIntervalMs = 5_000;
     public const int RequestReconnectWaitMs = 45000;
     public const int CompileGraceTimeoutMs = 90000;
     public const string McpSessionHeader = "Mcp-Session-Id";

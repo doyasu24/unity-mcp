@@ -46,8 +46,8 @@ internal sealed class UnityBridge
     private readonly ConcurrentDictionary<string, JobRecord> _jobs = new(StringComparer.Ordinal);
     private readonly object _activeSessionRejectLogGate = new();
 
-    private CancellationTokenSource? _heartbeatCts;
-    private long _lastPongUtcTicks;
+    private CancellationTokenSource? _staleTimerCts;
+    private long _lastMessageReceivedAtUtcTicks;
     private int _shutdownRequested;
     private DateTimeOffset _lastActiveSessionRejectLogUtc;
     private int _suppressedActiveSessionRejectLogs;
@@ -68,7 +68,6 @@ internal sealed class UnityBridge
         }
 
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
-        _sessionRegistry.Register(socket);
 
         try
         {
@@ -102,7 +101,7 @@ internal sealed class UnityBridge
             return;
         }
 
-        StopHeartbeat();
+        StopStaleTimer();
         FailPendingRequestsAsDisconnected();
         _runtimeState.OnDisconnected();
 
@@ -495,6 +494,11 @@ internal sealed class UnityBridge
             return;
         }
 
+        if (_sessionRegistry.IsActive(sourceSocket))
+        {
+            RecordMessageReceived();
+        }
+
         switch (type)
         {
             case "hello":
@@ -502,9 +506,6 @@ internal sealed class UnityBridge
                 return;
             case "editor_status":
                 HandleEditorStatus(message);
-                return;
-            case "pong":
-                HandlePong(message);
                 return;
         }
 
@@ -576,8 +577,8 @@ internal sealed class UnityBridge
             return;
         }
 
-        var promotion = _sessionRegistry.TryPromote(socket, editorInstanceId);
-        if (promotion.Result == SessionPromotionResult.RejectedActiveExists)
+        var acceptance = _sessionRegistry.TryAccept(socket, editorInstanceId);
+        if (acceptance.Result == AcceptResult.Rejected)
         {
             LogRejectedActiveSessionWarning(editorInstanceId, pluginSessionId, connectAttemptSeq);
             await SendRawAsync(socket, new JsonObject
@@ -596,14 +597,9 @@ internal sealed class UnityBridge
             return;
         }
 
-        if (promotion.Result == SessionPromotionResult.UnknownSocket)
+        if (acceptance.Result == AcceptResult.Replaced && acceptance.ReplacedSocket is not null)
         {
-            return;
-        }
-
-        if (promotion.Result == SessionPromotionResult.ReplacedActiveSameEditor && promotion.ReplacedSocket is not null)
-        {
-            await ReplaceActiveSessionAsync(promotion.ReplacedSocket);
+            await ReplaceActiveSessionAsync(acceptance.ReplacedSocket);
         }
 
         var connectionId = Guid.NewGuid().ToString("D");
@@ -615,9 +611,7 @@ internal sealed class UnityBridge
             ["protocol_version"] = Constants.ProtocolVersion,
             ["server_version"] = Constants.ServerVersion,
             ["connection_id"] = connectionId,
-            ["heartbeat_interval_ms"] = Constants.HeartbeatIntervalMs,
-            ["heartbeat_timeout_ms"] = Constants.HeartbeatTimeoutMs,
-            ["heartbeat_miss_threshold"] = Constants.HeartbeatMissThreshold,
+            ["editor_status_interval_ms"] = Constants.EditorStatusIntervalMs,
         }, cancellationToken);
 
         await SendRawAsync(socket, new JsonObject
@@ -627,25 +621,23 @@ internal sealed class UnityBridge
             ["tools"] = ToolCatalog.BuildUnityCapabilityTools(),
         }, cancellationToken);
 
-        if (promotion.Result is SessionPromotionResult.Activated or SessionPromotionResult.ReplacedActiveSameEditor)
-        {
-            Interlocked.Exchange(ref _lastPongUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
-            _runtimeState.OnConnected(initialState, connectionId, editorInstanceId);
-            StartHeartbeat(socket, connectionId, editorInstanceId);
-            Logger.Info(
-                "Unity websocket session activated",
-                ("connection_id", connectionId),
-                ("editor_instance_id", editorInstanceId),
-                ("plugin_session_id", pluginSessionId),
-                ("connect_attempt_seq", connectAttemptSeq),
-                ("editor_state", initialState.ToWire()));
-        }
+        RecordMessageReceived();
+        _runtimeState.OnConnected(initialState, connectionId, editorInstanceId);
+        StartStaleTimer(socket, connectionId, editorInstanceId);
+
+        Logger.Info(
+            "Unity websocket session activated",
+            ("connection_id", connectionId),
+            ("editor_instance_id", editorInstanceId),
+            ("plugin_session_id", pluginSessionId),
+            ("connect_attempt_seq", connectAttemptSeq),
+            ("editor_state", initialState.ToWire()));
     }
 
     private async Task ReplaceActiveSessionAsync(WebSocket replacedSocket)
     {
         var snapshot = _runtimeState.GetSnapshot();
-        StopHeartbeat();
+        StopStaleTimer();
         FailPendingRequestsAsDisconnected();
         _runtimeState.OnDisconnected();
         await SafeCloseSocketAsync(replacedSocket, WebSocketCloseStatus.NormalClosure, "replaced-by-same-editor", CancellationToken.None);
@@ -662,19 +654,73 @@ internal sealed class UnityBridge
         _runtimeState.OnEditorStatus(state, seq);
     }
 
-    private void HandlePong(JsonObject message)
+    private void RecordMessageReceived()
     {
-        Interlocked.Exchange(ref _lastPongUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
+        Interlocked.Exchange(ref _lastMessageReceivedAtUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
+        _runtimeState.RecordMessageReceived();
+    }
 
-        EditorState? state = null;
-        var editorStateRaw = JsonHelpers.GetString(message, "editor_state");
-        if (!string.IsNullOrWhiteSpace(editorStateRaw))
+    private void StartStaleTimer(WebSocket socket, string connectionId, string? editorInstanceId)
+    {
+        StopStaleTimer();
+        var staleTimerCts = new CancellationTokenSource();
+        _staleTimerCts = staleTimerCts;
+        var checkIntervalMs = Constants.StaleConnectionTimeoutMs / 3;
+
+        _ = Task.Run(async () =>
         {
-            state = WireState.ParseEditorState(editorStateRaw);
+            try
+            {
+                while (!staleTimerCts.Token.IsCancellationRequested)
+                {
+                    await Task.Delay(checkIntervalMs, staleTimerCts.Token);
+
+                    if (socket.State != WebSocketState.Open)
+                    {
+                        return;
+                    }
+
+                    var lastTicks = Interlocked.Read(ref _lastMessageReceivedAtUtcTicks);
+                    var elapsed = DateTimeOffset.UtcNow.UtcTicks - lastTicks;
+                    if (elapsed > TimeSpan.FromMilliseconds(Constants.StaleConnectionTimeoutMs).Ticks)
+                    {
+                        Logger.Warn(
+                            "Stale connection timeout reached. Closing Unity websocket.",
+                            ("connection_id", connectionId),
+                            ("editor_instance_id", editorInstanceId),
+                            ("timeout_ms", Constants.StaleConnectionTimeoutMs));
+                        await SafeCloseSocketAsync(socket, WebSocketCloseStatus.PolicyViolation, "stale-connection-timeout", CancellationToken.None);
+                        return;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // expected
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn("Stale timer loop error", ("error", ex.Message));
+            }
+        });
+    }
+
+    private void StopStaleTimer()
+    {
+        var cts = Interlocked.Exchange(ref _staleTimerCts, null);
+        if (cts is null)
+        {
+            return;
         }
 
-        var seq = JsonHelpers.GetUlong(message, "seq");
-        _runtimeState.OnPong(state, seq);
+        try
+        {
+            cts.Cancel();
+        }
+        finally
+        {
+            cts.Dispose();
+        }
     }
 
     private async Task<JsonObject> SendRequestAsync(JsonObject message, string expectedType, TimeSpan timeout, CancellationToken cancellationToken)
@@ -784,101 +830,17 @@ internal sealed class UnityBridge
         return socket;
     }
 
-    private void StartHeartbeat(WebSocket socket, string connectionId, string? editorInstanceId)
-    {
-        StopHeartbeat();
-        var heartbeatCts = new CancellationTokenSource();
-        _heartbeatCts = heartbeatCts;
-        var heartbeatMissState = new HeartbeatMissState(Constants.HeartbeatMissThreshold);
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                while (!heartbeatCts.Token.IsCancellationRequested)
-                {
-                    await Task.Delay(Constants.HeartbeatIntervalMs, heartbeatCts.Token);
-
-                    if (socket.State != WebSocketState.Open)
-                    {
-                        return;
-                    }
-
-                    var pingSentTicks = DateTimeOffset.UtcNow.UtcTicks;
-                    await SendRawAsync(socket, new JsonObject
-                    {
-                        ["type"] = "ping",
-                        ["protocol_version"] = Constants.ProtocolVersion,
-                    }, heartbeatCts.Token);
-
-                    await Task.Delay(Constants.HeartbeatTimeoutMs, heartbeatCts.Token);
-                    if (Interlocked.Read(ref _lastPongUtcTicks) < pingSentTicks && socket.State == WebSocketState.Open)
-                    {
-                        var shouldClose = heartbeatMissState.RegisterProbeResult(false);
-                        if (!shouldClose)
-                        {
-                            Logger.Warn(
-                                "Heartbeat pong missing for active Unity websocket",
-                                ("connection_id", connectionId),
-                                ("editor_instance_id", editorInstanceId),
-                                ("missed_pongs", heartbeatMissState.Misses),
-                                ("miss_threshold", heartbeatMissState.Threshold));
-                            continue;
-                        }
-
-                        Logger.Warn(
-                            "Heartbeat miss threshold reached. Closing Unity websocket.",
-                            ("connection_id", connectionId),
-                            ("editor_instance_id", editorInstanceId),
-                            ("missed_pongs", heartbeatMissState.Misses),
-                            ("miss_threshold", heartbeatMissState.Threshold));
-                        await SafeCloseSocketAsync(socket, WebSocketCloseStatus.PolicyViolation, "heartbeat-timeout", CancellationToken.None);
-                        return;
-                    }
-
-                    heartbeatMissState.RegisterProbeResult(true);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // expected
-            }
-            catch (Exception ex)
-            {
-                Logger.Warn("Heartbeat loop error", ("error", ex.Message));
-            }
-        });
-    }
-
-    private void StopHeartbeat()
-    {
-        var cts = Interlocked.Exchange(ref _heartbeatCts, null);
-        if (cts is null)
-        {
-            return;
-        }
-
-        try
-        {
-            cts.Cancel();
-        }
-        finally
-        {
-            cts.Dispose();
-        }
-    }
-
     private void OnSocketClosed(WebSocket closedSocket)
     {
-        var removal = _sessionRegistry.Remove(closedSocket);
-        if (!removal.WasActive)
+        var wasActive = _sessionRegistry.Remove(closedSocket);
+        if (!wasActive)
         {
             return;
         }
 
         var snapshot = _runtimeState.GetSnapshot();
         var wasConnected = snapshot.Connected;
-        StopHeartbeat();
+        StopStaleTimer();
         FailPendingRequestsAsDisconnected();
         _runtimeState.OnDisconnected();
         if (wasConnected && !IsShuttingDown())

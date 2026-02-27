@@ -52,6 +52,8 @@ namespace UnityMcpPlugin
         private ulong _currentConnectAttemptSeq;
         private CancellationTokenSource _inboundProcessorCts;
         private Task _inboundProcessorTask;
+        private CancellationTokenSource _periodicStatusCts;
+        private Task _periodicStatusTask;
 
         private readonly struct QueuedInboundMessage
         {
@@ -87,6 +89,8 @@ namespace UnityMcpPlugin
             _pluginSessionId = Guid.NewGuid().ToString("D");
             _inboundProcessorCts = new CancellationTokenSource();
             _inboundProcessorTask = Task.CompletedTask;
+            _periodicStatusCts = new CancellationTokenSource();
+            _periodicStatusTask = Task.CompletedTask;
         }
 
         internal static PluginRuntime Instance { get; } = new();
@@ -147,6 +151,7 @@ namespace UnityMcpPlugin
             }
 
             _connectionManager.Stop(TimeSpan.FromSeconds(2));
+            StopPeriodicStatus();
             StopInboundMessageProcessor();
             LogBuffer.Shutdown();
             MainThreadDispatcher.Shutdown();
@@ -297,6 +302,8 @@ namespace UnityMcpPlugin
                 PluginLogger.DevWarn("Initial editor_status send failed", ("port", port), ("error", ex.Message));
             }
 
+            StartPeriodicStatus();
+
             if (!conflictActive)
             {
                 PluginLogger.DevInfo("Bridge transport connected", ("port", port), ("uri", $"ws://{Host}:{port}{UnityWsPath}"));
@@ -327,17 +334,13 @@ namespace UnityMcpPlugin
                 return;
             }
 
-            if (string.Equals(type, "ping", StringComparison.Ordinal))
-            {
-                await SendPongAsync(cancellationToken);
-                return;
-            }
-
             EnqueueInboundMessage(message);
         }
 
         private void OnDisconnected(int port)
         {
+            StopPeriodicStatus();
+
             var conflictActive = false;
             lock (_gate)
             {
@@ -498,16 +501,70 @@ namespace UnityMcpPlugin
             }
         }
 
-        private async Task SendPongAsync(CancellationToken cancellationToken)
+        private void StartPeriodicStatus()
         {
-            var snapshot = GetEditorSnapshot();
-            await SendMessageAsync(new
+            StopPeriodicStatus();
+            _periodicStatusCts = new CancellationTokenSource();
+            var cts = _periodicStatusCts;
+            _periodicStatusTask = Task.Run(() => PeriodicEditorStatusLoopAsync(cts.Token));
+        }
+
+        private void StopPeriodicStatus()
+        {
+            try
             {
-                type = "pong",
-                protocol_version = Wire.ProtocolVersion,
-                editor_state = Wire.ToWireState(snapshot.State),
-                seq = snapshot.Seq,
-            }, cancellationToken);
+                _periodicStatusCts.Cancel();
+            }
+            catch
+            {
+                // no-op
+            }
+
+            try
+            {
+                _periodicStatusTask.Wait(500);
+            }
+            catch
+            {
+                // no-op
+            }
+
+            _periodicStatusCts.Dispose();
+            _periodicStatusCts = new CancellationTokenSource();
+            _periodicStatusTask = Task.CompletedTask;
+        }
+
+        private async Task PeriodicEditorStatusLoopAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    await Task.Delay(Wire.EditorStatusIntervalMs, cancellationToken);
+
+                    if (_connectionManager.GetConnectedPort() <= 0)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        await SendCurrentEditorStatusAsync(cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        PluginLogger.DevWarn("Periodic editor_status send failed", ("error", ex.Message));
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // expected
+            }
         }
 
         private async Task SendProtocolErrorAsync(string requestId, string code, string message, CancellationToken cancellationToken)
@@ -566,9 +623,6 @@ namespace UnityMcpPlugin
         {
             var connectedPort = _connectionManager.GetConnectedPort();
             var connectionId = Payload.GetString(message, "connection_id");
-            var heartbeatIntervalMs = Payload.GetInt(message, "heartbeat_interval_ms");
-            var heartbeatTimeoutMs = Payload.GetInt(message, "heartbeat_timeout_ms");
-            var heartbeatMissThreshold = Payload.GetInt(message, "heartbeat_miss_threshold");
             lock (_gate)
             {
                 _multiEditorConflictAnnounced = false;
@@ -579,12 +633,6 @@ namespace UnityMcpPlugin
             _connectionManager.ClearReconnectDelay();
             ResetConnectivityIssueTracking();
             PluginLogger.UserInfo("Connected to server", ("port", connectedPort), ("connection_id", connectionId));
-            PluginLogger.DevInfo(
-                "Server heartbeat policy updated",
-                ("connection_id", connectionId),
-                ("heartbeat_interval_ms", heartbeatIntervalMs),
-                ("heartbeat_timeout_ms", heartbeatTimeoutMs),
-                ("heartbeat_miss_threshold", heartbeatMissThreshold));
         }
 
         private void EnqueueInboundMessage(JObject message)

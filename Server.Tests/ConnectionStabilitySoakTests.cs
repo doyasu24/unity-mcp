@@ -5,14 +5,13 @@ namespace UnityMcpServer.Tests;
 public sealed class ConnectionStabilitySoakTests
 {
     [Fact]
-    public void OneMinute_DisconnectInjection_DoesNotTriggerFalseSingleMissFailure()
+    public void OneMinute_DisconnectInjection_WaitingReasonIsCorrect()
     {
         var runtimeState = new RuntimeState();
-        var heartbeatMissState = new HeartbeatMissState(2);
         var random = new Random(20260227);
 
         var seq = 1UL;
-        var falseFailures = 0;
+        var failures = 0;
         var reconnectCount = 0;
         var until = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(1);
         while (DateTimeOffset.UtcNow < until)
@@ -30,24 +29,30 @@ public sealed class ConnectionStabilitySoakTests
             var waitingReason = runtimeState.GetSnapshot().WaitingReason;
             if (enteringCompile && waitingReason != "compiling")
             {
-                falseFailures += 1;
+                failures += 1;
             }
 
             if (!enteringCompile && waitingReason != "reconnecting")
             {
-                falseFailures += 1;
+                failures += 1;
             }
 
-            var closedAfterSingleMiss = heartbeatMissState.RegisterProbeResult(false);
-            if (closedAfterSingleMiss)
-            {
-                falseFailures += 1;
-            }
-
-            heartbeatMissState.RegisterProbeResult(true);
             reconnectCount += 1;
         }
 
-        Assert.Equal(0, falseFailures);
+        Assert.Equal(0, failures);
+    }
+
+    [Fact]
+    public void CompileTransition_ThenDisconnect_WaitingReasonIsCompiling()
+    {
+        var runtimeState = new RuntimeState();
+
+        runtimeState.OnConnected(EditorState.Ready, "conn-1", "editor-1");
+        runtimeState.OnEditorStatus(EditorState.Compiling, 1);
+        runtimeState.OnDisconnected();
+
+        var snapshot = runtimeState.GetSnapshot();
+        Assert.Equal("compiling", snapshot.WaitingReason);
     }
 }

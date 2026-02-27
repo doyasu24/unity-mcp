@@ -111,7 +111,7 @@ internal sealed record RuntimeSnapshot(
     [property: JsonPropertyName("connected")] bool Connected,
     [property: JsonPropertyName("last_editor_status_seq")] ulong LastEditorStatusSeq,
     [property: JsonPropertyName("waiting_reason")] string WaitingReason,
-    [property: JsonPropertyName("last_pong_utc")] string? LastPongUtc,
+    [property: JsonPropertyName("last_message_received_utc")] string? LastMessageReceivedUtc,
     [property: JsonPropertyName("active_connection_id")] string? ActiveConnectionId,
     [property: JsonPropertyName("editor_instance_id")] string? EditorInstanceId);
 
@@ -124,7 +124,7 @@ internal sealed class RuntimeState
     private bool _connected;
     private ulong _lastEditorStatusSeq;
     private DateTimeOffset _lastEditorStateAtUtc = DateTimeOffset.UtcNow;
-    private DateTimeOffset? _lastPongUtc;
+    private DateTimeOffset? _lastMessageReceivedUtc;
     private string? _activeConnectionId;
     private string? _activeEditorInstanceId;
 
@@ -141,7 +141,7 @@ internal sealed class RuntimeState
                 _connected,
                 _lastEditorStatusSeq,
                 waitingReason.ToWire(),
-                _lastPongUtc?.ToString("O"),
+                _lastMessageReceivedUtc?.ToString("O"),
                 _activeConnectionId,
                 _activeEditorInstanceId);
         }
@@ -237,26 +237,12 @@ internal sealed class RuntimeState
         }
     }
 
-    public void OnPong(EditorState? state, ulong? seq)
+    public void RecordMessageReceived()
     {
-        var now = DateTimeOffset.UtcNow;
         lock (_gate)
         {
-            _lastPongUtc = now;
-
-            if (state.HasValue)
-            {
-                _editorState = state.Value;
-                _lastEditorStateAtUtc = now;
-            }
-
-            if (seq.HasValue && seq.Value > _lastEditorStatusSeq)
-            {
-                _lastEditorStatusSeq = seq.Value;
-            }
+            _lastMessageReceivedUtc = DateTimeOffset.UtcNow;
         }
-
-        StateChanged?.Invoke();
     }
 
     public async Task<bool> WaitForEditorReadyAsync(TimeSpan timeout, CancellationToken cancellationToken)

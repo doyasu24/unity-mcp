@@ -1,8 +1,8 @@
 # Unity MCP 実装仕様書 v1.0（初期実装）
 
 - Status: Draft (Implementation Baseline)
-- Date: 2026-02-25
-- Source: ADR-0001 〜 ADR-0013
+- Date: 2026-02-28
+- Source: ADR-0001 〜 ADR-0015
 
 ## 0. 目的
 本仕様書は、ADR群の決定事項を実装向けに統合した正本である。  
@@ -73,7 +73,7 @@ ADR-0005を実装単位に落とし込む。
    - 制御toolは `JobManager/CancelManager` へ委譲
 7. `UnityBridgeClient`
    - `/unity` upgrade経由のPlugin WebSocketセッション管理
-   - 送受信 (`hello/editor_status/ping/pong/result/submit_job_result/job_status/cancel_result`)
+   - 送受信 (`hello/editor_status/result/submit_job_result/job_status/cancel_result`)
 8. `ReconnectController`
    - 切断後の再接続待機ウィンドウ管理（Plugin再接続前提）
 9. `EditorStateTracker`
@@ -206,26 +206,28 @@ Plugin:
 1. `hello`
 2. `capability`
 3. `editor_status`
-4. `ping` / `pong`
-5. `execute` / `result`
-6. `submit_job` / `submit_job_result`
-7. `get_job_status` / `job_status`
-8. `cancel` / `cancel_result`
-9. `error`
+4. `execute` / `result`
+5. `submit_job` / `submit_job_result`
+6. `get_job_status` / `job_status`
+7. `cancel` / `cancel_result`
+8. `error`
+
+注記: `ping` / `pong` は ADR-0015 により廃止。Plugin は `editor_status` を定期送信（`EditorStatusIntervalMs=5000`）し、Server は任意のメッセージ受信で接続生存を判定する。
 
 ### 6.3 接続シーケンス
 1. Pluginが `ws://127.0.0.1:{port}/unity` へ接続
 2. Plugin -> Server: `hello(plugin_version, editor_instance_id, plugin_session_id, connect_attempt_seq, state)`
-3. Server -> Plugin: `hello(server_version, connection_id, heartbeat_interval_ms, heartbeat_timeout_ms, heartbeat_miss_threshold)`
+3. Server -> Plugin: `hello(server_version, connection_id, editor_status_interval_ms)`
 4. Server -> Plugin: `capability`
-5. heartbeatは Server `ping` -> Plugin `pong`
-6. Serverは `hello` 受信完了まで接続を `pending` 扱いとし、既存 `active` セッションを切断しない。
-7. 既存 `active` がある状態で同一 `editor_instance_id` の接続が `hello` を送信した場合、Serverは既存 `active` を置換して新規接続を採用する。
-8. 既存 `active` がある状態で異なる `editor_instance_id` の接続が `hello` を送信した場合、Serverは既存セッションを維持し、新規接続を拒否する。
-9. 8の拒否時、Serverは `error` (`code=ERR_INVALID_REQUEST`, `message=\"another Unity websocket session is already active\"`) を返した後、新規接続をcloseする。
-10. 8を受信したPlugin（2つ目のEditor）は接続失敗として扱い、ユーザー向けに次の案内ログを出す。
+5. Plugin は `editor_status_interval_ms`（5秒）間隔で `editor_status` を定期送信する（暗黙のハートビート）
+6. Server は `stale_connection_timeout_ms`（15秒）以内にアクティブソケットからメッセージを受信しなかった場合、接続を切断する
+7. Serverは `hello` 受信完了まで接続を `pending` 扱いとし、既存 `active` セッションを切断しない。
+8. 既存 `active` がある状態で同一 `editor_instance_id` の接続が `hello` を送信した場合、Serverは既存 `active` を置換して新規接続を採用する。
+9. 既存 `active` がある状態で異なる `editor_instance_id` の接続が `hello` を送信した場合、Serverは既存セッションを維持し、新規接続を拒否する。
+10. 9の拒否時、Serverは `error` (`code=ERR_INVALID_REQUEST`, `message=\"another Unity websocket session is already active\"`) を返した後、新規接続をcloseする。
+11. 9を受信したPlugin（2つ目のEditor）は接続失敗として扱い、ユーザー向けに次の案内ログを出す。
    - `Connection rejected: multiple Unity Editors are trying to use the same MCP server. Close one Editor, or see README > Using Multiple Unity Editors.`
-11. 10の案内ログは同一競合状態の間は重複出力しない。`hello` 成功後に再び競合が起きた場合は再出力してよい。
+12. 11の案内ログは同一競合状態の間は重複出力しない。`hello` 成功後に再び競合が起きた場合は再出力してよい。
 
 ### 6.4 フィールド命名
 1. 相関キーは `request_id`
@@ -446,15 +448,14 @@ Rules:
 2. `reconnect_multiplier = 1.8`
 3. `reconnect_max_backoff_ms = 5000`
 4. `reconnect_jitter_ratio = 0.2`
-5. `heartbeat_interval_ms = 3000`
-6. `heartbeat_timeout_ms = 12000`
-7. `heartbeat_miss_threshold = 2`
-8. `request_reconnect_wait_ms = 45000`
-9. `compile_grace_timeout_ms = 90000`
-10. `queue_max_size = 32`
-11. `max_message_bytes = 1048576`
-12. `mcp_http_path = /mcp`
-13. `unity_ws_path = /unity`
+5. `stale_connection_timeout_ms = 15000`
+6. `editor_status_interval_ms = 5000`
+7. `request_reconnect_wait_ms = 45000`
+8. `compile_grace_timeout_ms = 90000`
+9. `queue_max_size = 32`
+10. `max_message_bytes = 1048576`
+11. `mcp_http_path = /mcp`
+12. `unity_ws_path = /unity`
 
 ## 11. ログ要件
 1. すべての要求に `request_id`

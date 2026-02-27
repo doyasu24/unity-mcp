@@ -60,7 +60,7 @@ internal static class ServerHost
         var app = builder.Build();
         app.UseWebSockets(new WebSocketOptions
         {
-            KeepAliveInterval = TimeSpan.FromSeconds(30),
+            KeepAliveInterval = TimeSpan.FromSeconds(10),
         });
 
         var runtimeState = app.Services.GetRequiredService<RuntimeState>();

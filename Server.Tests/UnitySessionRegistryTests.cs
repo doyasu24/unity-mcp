@@ -6,63 +6,46 @@ namespace UnityMcpServer.Tests;
 public sealed class UnitySessionRegistryTests
 {
     [Fact]
-    public void TryPromote_ReturnsUnknown_WhenSocketIsNotRegistered()
+    public void TryAccept_ActivatesFirstSocket()
     {
         var registry = new UnitySessionRegistry();
         var socket = new FakeWebSocket();
 
-        var result = registry.TryPromote(socket, "editor-a");
+        var result = registry.TryAccept(socket, "editor-a");
 
-        Assert.Equal(SessionPromotionResult.UnknownSocket, result.Result);
-        Assert.Null(result.ReplacedSocket);
-    }
-
-    [Fact]
-    public void TryPromote_ActivatesFirstRegisteredSocket()
-    {
-        var registry = new UnitySessionRegistry();
-        var socket = new FakeWebSocket();
-        registry.Register(socket);
-
-        var result = registry.TryPromote(socket, "editor-a");
-
-        Assert.Equal(SessionPromotionResult.Activated, result.Result);
+        Assert.Equal(AcceptResult.Accepted, result.Result);
         Assert.Null(result.ReplacedSocket);
         Assert.True(registry.IsActive(socket));
         Assert.Same(socket, registry.GetActiveSocket());
     }
 
     [Fact]
-    public void TryPromote_RejectsAnotherSocket_WhenActiveIsOpen()
+    public void TryAccept_RejectsDifferentEditor_WhenActiveIsOpen()
     {
         var registry = new UnitySessionRegistry();
         var first = new FakeWebSocket();
         var second = new FakeWebSocket();
-        registry.Register(first);
-        registry.Register(second);
-        registry.TryPromote(first, "editor-a");
+        registry.TryAccept(first, "editor-a");
 
-        var result = registry.TryPromote(second, "editor-b");
+        var result = registry.TryAccept(second, "editor-b");
 
-        Assert.Equal(SessionPromotionResult.RejectedActiveExists, result.Result);
+        Assert.Equal(AcceptResult.Rejected, result.Result);
         Assert.Null(result.ReplacedSocket);
         Assert.True(registry.IsActive(first));
         Assert.False(registry.IsActive(second));
     }
 
     [Fact]
-    public void TryPromote_ReplacesActiveSocket_WhenEditorInstanceIdMatches()
+    public void TryAccept_ReplacesSameEditor()
     {
         var registry = new UnitySessionRegistry();
         var first = new FakeWebSocket();
         var second = new FakeWebSocket();
-        registry.Register(first);
-        registry.Register(second);
-        registry.TryPromote(first, "editor-a");
+        registry.TryAccept(first, "editor-a");
 
-        var result = registry.TryPromote(second, "editor-a");
+        var result = registry.TryAccept(second, "editor-a");
 
-        Assert.Equal(SessionPromotionResult.ReplacedActiveSameEditor, result.Result);
+        Assert.Equal(AcceptResult.Replaced, result.Result);
         Assert.Same(first, result.ReplacedSocket);
         Assert.False(registry.IsActive(first));
         Assert.True(registry.IsActive(second));
@@ -70,42 +53,86 @@ public sealed class UnitySessionRegistryTests
     }
 
     [Fact]
-    public void TryPromote_ActivatesNewSocket_WhenExistingActiveIsClosed()
+    public void TryAccept_AcceptsNewSocket_WhenExistingActiveIsClosed()
     {
         var registry = new UnitySessionRegistry();
         var first = new FakeWebSocket();
         var second = new FakeWebSocket();
-        registry.Register(first);
-        registry.Register(second);
-        registry.TryPromote(first, "editor-a");
+        registry.TryAccept(first, "editor-a");
         first.SetState(WebSocketState.Closed);
 
-        var result = registry.TryPromote(second, "editor-b");
+        var result = registry.TryAccept(second, "editor-b");
 
-        Assert.Equal(SessionPromotionResult.Activated, result.Result);
+        Assert.Equal(AcceptResult.Accepted, result.Result);
         Assert.Null(result.ReplacedSocket);
         Assert.True(registry.IsActive(second));
         Assert.False(registry.IsActive(first));
     }
 
     [Fact]
-    public void DrainAll_ClearsRegisteredAndActiveSockets()
+    public void Remove_ReturnsTrueForActiveSocket()
     {
         var registry = new UnitySessionRegistry();
-        var first = new FakeWebSocket();
-        var second = new FakeWebSocket();
-        registry.Register(first);
-        registry.Register(second);
-        registry.TryPromote(first, "editor-a");
+        var socket = new FakeWebSocket();
+        registry.TryAccept(socket, "editor-a");
+
+        var wasActive = registry.Remove(socket);
+
+        Assert.True(wasActive);
+        Assert.Null(registry.GetActiveSocket());
+    }
+
+    [Fact]
+    public void Remove_ReturnsFalseForNonActiveSocket()
+    {
+        var registry = new UnitySessionRegistry();
+        var active = new FakeWebSocket();
+        var other = new FakeWebSocket();
+        registry.TryAccept(active, "editor-a");
+
+        var wasActive = registry.Remove(other);
+
+        Assert.False(wasActive);
+        Assert.True(registry.IsActive(active));
+    }
+
+    [Fact]
+    public void DrainAll_ClearsActiveSocket()
+    {
+        var registry = new UnitySessionRegistry();
+        var socket = new FakeWebSocket();
+        registry.TryAccept(socket, "editor-a");
 
         var drained = registry.DrainAll();
 
-        Assert.Equal(2, drained.Count);
-        Assert.Contains(first, drained);
-        Assert.Contains(second, drained);
+        Assert.Single(drained);
+        Assert.Contains(socket, drained);
         Assert.Null(registry.GetActiveSocket());
-        Assert.False(registry.IsActive(first));
-        Assert.False(registry.IsActive(second));
+        Assert.False(registry.IsActive(socket));
+    }
+
+    [Fact]
+    public void DrainAll_ReturnsEmpty_WhenNoActiveSocket()
+    {
+        var registry = new UnitySessionRegistry();
+
+        var drained = registry.DrainAll();
+
+        Assert.Empty(drained);
+    }
+
+    [Fact]
+    public void TryAccept_ReturnAccepted_WhenSameSocketReAccepted()
+    {
+        var registry = new UnitySessionRegistry();
+        var socket = new FakeWebSocket();
+        registry.TryAccept(socket, "editor-a");
+
+        var result = registry.TryAccept(socket, "editor-a");
+
+        Assert.Equal(AcceptResult.Accepted, result.Result);
+        Assert.Null(result.ReplacedSocket);
+        Assert.True(registry.IsActive(socket));
     }
 
     private sealed class FakeWebSocket : WebSocket
