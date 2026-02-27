@@ -146,6 +146,7 @@ namespace UnityMcpPlugin
         internal void RequestReconnect()
         {
             CancelCurrentSession();
+            CloseCurrentSocket("reconnect-requested");
             try
             {
                 _reconnectSignal.Release();
