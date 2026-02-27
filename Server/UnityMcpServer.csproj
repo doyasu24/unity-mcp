@@ -4,5 +4,22 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>UnityMcpServer</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>unity-mcp</ToolCommandName>
+    <Version>0.1.0</Version>
+    <PackageId>Doyasu24.UnityMcp.Tool</PackageId>
+    <Title>Unity MCP</Title>
+    <Authors>Doyasu24</Authors>
+    <Description>MCP server bridge for Unity Editor tooling.</Description>
+    <PackageTags>unity;mcp;dotnet-tool</PackageTags>
+    <PackageProjectUrl>https://github.com/doyasu24/unity-mcp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/doyasu24/unity-mcp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" Link="README.md" />
+  </ItemGroup>
 </Project>

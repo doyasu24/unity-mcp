@@ -1,0 +1,43 @@
+name: Release Dotnet Tool
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PROJECT_PATH: Server/UnityMcpServer.csproj
+      TEST_PROJECT_PATH: Server.Tests/UnityMcpServer.Tests.csproj
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Validate tag version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PROJECT_VERSION="$(dotnet msbuild "$PROJECT_PATH" -nologo -getProperty:Version)"
+
+          if [ "$TAG_VERSION" != "$PROJECT_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) must match project version ($PROJECT_VERSION)."
+            exit 1
+          fi
+
+      - run: dotnet test "$TEST_PROJECT_PATH" -c Release --nologo
+
+      - run: dotnet pack "$PROJECT_PATH" -c Release -o ./artifacts --nologo
+
+      - uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - run: dotnet nuget push ./artifacts/*.nupkg --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
