@@ -14,8 +14,11 @@ internal static class ToolNames
     public const string GetJobStatus = "get_job_status";
     public const string CancelJob = "cancel_job";
     public const string GetSceneHierarchy = "get_scene_hierarchy";
-    public const string GetComponentInfo = "get_component_info";
-    public const string ManageComponent = "manage_component";
+    public const string GetSceneComponentInfo = "get_scene_component_info";
+    public const string ManageSceneComponent = "manage_scene_component";
+    public const string GetPrefabHierarchy = "get_prefab_hierarchy";
+    public const string GetPrefabComponentInfo = "get_prefab_component_info";
+    public const string ManagePrefabComponent = "manage_prefab_component";
 }
 
 internal static class ToolLimits
@@ -122,10 +125,22 @@ internal sealed record GetSceneHierarchyRequest(string? RootPath, int MaxDepth, 
 
 internal sealed record GetSceneHierarchyResult(JsonNode Payload);
 
-internal sealed record GetComponentInfoRequest(string GameObjectPath, int Index, string[]? Fields, int MaxArrayElements);
+internal sealed record GetSceneComponentInfoRequest(string GameObjectPath, int Index, string[]? Fields, int MaxArrayElements);
 
-internal sealed record GetComponentInfoResult(JsonNode Payload);
+internal sealed record GetSceneComponentInfoResult(JsonNode Payload);
 
-internal sealed record ManageComponentRequest(string Action, string GameObjectPath, string? ComponentType, int? Index, int? NewIndex, JsonObject? Fields);
+internal sealed record ManageSceneComponentRequest(string Action, string GameObjectPath, string? ComponentType, int? Index, int? NewIndex, JsonObject? Fields);
 
-internal sealed record ManageComponentResult(JsonNode Payload);
+internal sealed record ManageSceneComponentResult(JsonNode Payload);
+
+internal sealed record GetPrefabHierarchyRequest(string PrefabPath, string? GameObjectPath, int MaxDepth, int MaxGameObjects);
+
+internal sealed record GetPrefabHierarchyResult(JsonNode Payload);
+
+internal sealed record GetPrefabComponentInfoRequest(string PrefabPath, string GameObjectPath, int Index, string[]? Fields, int MaxArrayElements);
+
+internal sealed record GetPrefabComponentInfoResult(JsonNode Payload);
+
+internal sealed record ManagePrefabComponentRequest(string PrefabPath, string Action, string GameObjectPath, string? ComponentType, int? Index, int? NewIndex, JsonObject? Fields);
+
+internal sealed record ManagePrefabComponentResult(JsonNode Payload);

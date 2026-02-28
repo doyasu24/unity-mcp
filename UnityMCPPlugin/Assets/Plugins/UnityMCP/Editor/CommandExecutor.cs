@@ -91,14 +91,29 @@ namespace UnityMcpPlugin
                 return await MainThreadDispatcher.InvokeAsync(() => SceneHierarchyTool.Execute(parameters));
             }
 
-            if (string.Equals(toolName, ToolNames.GetComponentInfo, StringComparison.Ordinal))
+            if (string.Equals(toolName, ToolNames.GetSceneComponentInfo, StringComparison.Ordinal))
             {
                 return await MainThreadDispatcher.InvokeAsync(() => ComponentInfoTool.Execute(parameters));
             }
 
-            if (string.Equals(toolName, ToolNames.ManageComponent, StringComparison.Ordinal))
+            if (string.Equals(toolName, ToolNames.ManageSceneComponent, StringComparison.Ordinal))
             {
                 return await MainThreadDispatcher.InvokeAsync(() => ManageComponentTool.Execute(parameters));
+            }
+
+            if (string.Equals(toolName, ToolNames.GetPrefabHierarchy, StringComparison.Ordinal))
+            {
+                return await MainThreadDispatcher.InvokeAsync(() => PrefabHierarchyTool.Execute(parameters));
+            }
+
+            if (string.Equals(toolName, ToolNames.GetPrefabComponentInfo, StringComparison.Ordinal))
+            {
+                return await MainThreadDispatcher.InvokeAsync(() => PrefabComponentInfoTool.Execute(parameters));
+            }
+
+            if (string.Equals(toolName, ToolNames.ManagePrefabComponent, StringComparison.Ordinal))
+            {
+                return await MainThreadDispatcher.InvokeAsync(() => ManagePrefabComponentTool.Execute(parameters));
             }
 
             throw new PluginException("ERR_UNKNOWN_COMMAND", $"unsupported tool: {toolName}");

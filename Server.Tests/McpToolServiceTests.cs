@@ -51,7 +51,7 @@ public sealed class McpToolServiceTests
         var service = CreateService(new RuntimeState());
 
         var args = new JsonObject { ["index"] = 0 };
-        var result = await service.CallToolAsync(ToolNames.GetComponentInfo, args, CancellationToken.None);
+        var result = await service.CallToolAsync(ToolNames.GetSceneComponentInfo, args, CancellationToken.None);
 
         Assert.True(result["isError"]?.GetValue<bool>());
         var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
@@ -64,7 +64,7 @@ public sealed class McpToolServiceTests
         var service = CreateService(new RuntimeState());
 
         var args = new JsonObject { ["game_object_path"] = "/Player" };
-        var result = await service.CallToolAsync(ToolNames.GetComponentInfo, args, CancellationToken.None);
+        var result = await service.CallToolAsync(ToolNames.GetSceneComponentInfo, args, CancellationToken.None);
 
         Assert.True(result["isError"]?.GetValue<bool>());
         var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
@@ -81,7 +81,7 @@ public sealed class McpToolServiceTests
             ["action"] = "invalid",
             ["game_object_path"] = "/Player",
         };
-        var result = await service.CallToolAsync(ToolNames.ManageComponent, args, CancellationToken.None);
+        var result = await service.CallToolAsync(ToolNames.ManageSceneComponent, args, CancellationToken.None);
 
         Assert.True(result["isError"]?.GetValue<bool>());
         var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
@@ -98,7 +98,7 @@ public sealed class McpToolServiceTests
             ["action"] = "add",
             ["game_object_path"] = "/Player",
         };
-        var result = await service.CallToolAsync(ToolNames.ManageComponent, args, CancellationToken.None);
+        var result = await service.CallToolAsync(ToolNames.ManageSceneComponent, args, CancellationToken.None);
 
         Assert.True(result["isError"]?.GetValue<bool>());
         var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
@@ -116,7 +116,7 @@ public sealed class McpToolServiceTests
             ["game_object_path"] = "/Player",
             ["fields"] = new JsonObject { ["speed"] = 5 },
         };
-        var result = await service.CallToolAsync(ToolNames.ManageComponent, args, CancellationToken.None);
+        var result = await service.CallToolAsync(ToolNames.ManageSceneComponent, args, CancellationToken.None);
 
         Assert.True(result["isError"]?.GetValue<bool>());
         var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
@@ -134,7 +134,105 @@ public sealed class McpToolServiceTests
             ["game_object_path"] = "/Player",
             ["index"] = 1,
         };
-        var result = await service.CallToolAsync(ToolNames.ManageComponent, args, CancellationToken.None);
+        var result = await service.CallToolAsync(ToolNames.ManageSceneComponent, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForGetPrefabHierarchy_MissingPrefabPath()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject();
+        var result = await service.CallToolAsync(ToolNames.GetPrefabHierarchy, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForGetPrefabComponentInfo_MissingPrefabPath()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject { ["game_object_path"] = "", ["index"] = 0 };
+        var result = await service.CallToolAsync(ToolNames.GetPrefabComponentInfo, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForGetPrefabComponentInfo_MissingIndex()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["prefab_path"] = "Assets/Prefabs/Player.prefab",
+            ["game_object_path"] = "/Child",
+        };
+        var result = await service.CallToolAsync(ToolNames.GetPrefabComponentInfo, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManagePrefabComponent_InvalidAction()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["prefab_path"] = "Assets/Prefabs/Player.prefab",
+            ["action"] = "invalid",
+            ["game_object_path"] = "/Child",
+        };
+        var result = await service.CallToolAsync(ToolNames.ManagePrefabComponent, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManagePrefabComponent_AddMissingComponentType()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["prefab_path"] = "Assets/Prefabs/Player.prefab",
+            ["action"] = "add",
+            ["game_object_path"] = "/Child",
+        };
+        var result = await service.CallToolAsync(ToolNames.ManagePrefabComponent, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManagePrefabComponent_MoveMissingNewIndex()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["prefab_path"] = "Assets/Prefabs/Player.prefab",
+            ["action"] = "move",
+            ["game_object_path"] = "/Child",
+            ["index"] = 1,
+        };
+        var result = await service.CallToolAsync(ToolNames.ManagePrefabComponent, args, CancellationToken.None);
 
         Assert.True(result["isError"]?.GetValue<bool>());
         var structured = Assert.IsType<JsonObject>(result["structuredContent"]);

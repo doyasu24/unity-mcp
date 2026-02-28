@@ -13,7 +13,7 @@ namespace UnityMcpPlugin.Tools
 
     internal static class ReferenceResolver
     {
-        internal static Dictionary<string, ResolvedRef> ResolveAll(JObject fields, SerializedObject serializedObject)
+        internal static Dictionary<string, ResolvedRef> ResolveAll(JObject fields, SerializedObject serializedObject, ToolContext context = null)
         {
             var resolved = new Dictionary<string, ResolvedRef>();
             if (fields == null)
@@ -21,7 +21,7 @@ namespace UnityMcpPlugin.Tools
                 return resolved;
             }
 
-            WalkAndResolve(fields, serializedObject, "", resolved);
+            WalkAndResolve(fields, serializedObject, "", resolved, context);
             return resolved;
         }
 
@@ -29,7 +29,8 @@ namespace UnityMcpPlugin.Tools
             JToken token,
             SerializedObject serializedObject,
             string pathPrefix,
-            Dictionary<string, ResolvedRef> resolved)
+            Dictionary<string, ResolvedRef> resolved,
+            ToolContext context = null)
         {
             if (token is JObject obj)
             {
@@ -37,7 +38,7 @@ namespace UnityMcpPlugin.Tools
                 {
                     var refPath = obj.Value<string>("$ref");
                     var componentHint = obj.Value<string>("component");
-                    var resolvedObj = ResolveSceneRef(refPath, componentHint, serializedObject, pathPrefix);
+                    var resolvedObj = ResolveSceneRef(refPath, componentHint, serializedObject, pathPrefix, context);
                     resolved[pathPrefix] = new ResolvedRef { Object = resolvedObj };
                     return;
                 }
@@ -55,7 +56,7 @@ namespace UnityMcpPlugin.Tools
                     var childPath = string.IsNullOrEmpty(pathPrefix)
                         ? prop.Name
                         : pathPrefix + "." + prop.Name;
-                    WalkAndResolve(prop.Value, serializedObject, childPath, resolved);
+                    WalkAndResolve(prop.Value, serializedObject, childPath, resolved, context);
                 }
             }
             else if (token is JArray arr)
@@ -63,7 +64,7 @@ namespace UnityMcpPlugin.Tools
                 for (var i = 0; i < arr.Count; i++)
                 {
                     var childPath = pathPrefix + "[" + i + "]";
-                    WalkAndResolve(arr[i], serializedObject, childPath, resolved);
+                    WalkAndResolve(arr[i], serializedObject, childPath, resolved, context);
                 }
             }
         }
@@ -72,7 +73,8 @@ namespace UnityMcpPlugin.Tools
             string refPath,
             string componentHint,
             SerializedObject serializedObject,
-            string fieldPath)
+            string fieldPath,
+            ToolContext context = null)
         {
             if (string.IsNullOrEmpty(refPath))
             {
@@ -80,7 +82,7 @@ namespace UnityMcpPlugin.Tools
                     $"$ref path is empty for field '{fieldPath}'");
             }
 
-            var go = GameObjectResolver.Resolve(refPath);
+            var go = context != null ? context.ResolveGameObject(refPath) : GameObjectResolver.Resolve(refPath);
             if (go == null)
             {
                 throw new PluginException(SceneToolErrors.ReferenceNotFound,

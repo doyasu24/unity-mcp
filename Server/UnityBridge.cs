@@ -272,13 +272,13 @@ internal sealed class UnityBridge
         }, cancellationToken);
     }
 
-    public Task<GetComponentInfoResult> GetComponentInfoAsync(GetComponentInfoRequest request, CancellationToken cancellationToken)
+    public Task<GetSceneComponentInfoResult> GetSceneComponentInfoAsync(GetSceneComponentInfoRequest request, CancellationToken cancellationToken)
     {
         return _scheduler.EnqueueAsync(async token =>
         {
             PruneJobs();
             await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetComponentInfo);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetSceneComponentInfo);
             var parameters = new JsonObject
             {
                 ["game_object_path"] = request.GameObjectPath,
@@ -296,18 +296,18 @@ internal sealed class UnityBridge
                 parameters["fields"] = fieldsArray;
             }
 
-            var payload = await ExecuteSyncToolAsync(ToolNames.GetComponentInfo, parameters, timeoutMs, token);
-            return new GetComponentInfoResult(payload);
+            var payload = await ExecuteSyncToolAsync(ToolNames.GetSceneComponentInfo, parameters, timeoutMs, token);
+            return new GetSceneComponentInfoResult(payload);
         }, cancellationToken);
     }
 
-    public Task<ManageComponentResult> ManageComponentAsync(ManageComponentRequest request, CancellationToken cancellationToken)
+    public Task<ManageSceneComponentResult> ManageSceneComponentAsync(ManageSceneComponentRequest request, CancellationToken cancellationToken)
     {
         return _scheduler.EnqueueAsync(async token =>
         {
             PruneJobs();
             await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageComponent);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageSceneComponent);
             var parameters = new JsonObject
             {
                 ["action"] = request.Action,
@@ -333,8 +333,99 @@ internal sealed class UnityBridge
                 parameters["fields"] = request.Fields.DeepClone();
             }
 
-            var payload = await ExecuteSyncToolAsync(ToolNames.ManageComponent, parameters, timeoutMs, token);
-            return new ManageComponentResult(payload);
+            var payload = await ExecuteSyncToolAsync(ToolNames.ManageSceneComponent, parameters, timeoutMs, token);
+            return new ManageSceneComponentResult(payload);
+        }, cancellationToken);
+    }
+
+    public Task<GetPrefabHierarchyResult> GetPrefabHierarchyAsync(GetPrefabHierarchyRequest request, CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            PruneJobs();
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPrefabHierarchy);
+            var parameters = new JsonObject
+            {
+                ["prefab_path"] = request.PrefabPath,
+                ["max_depth"] = request.MaxDepth,
+                ["max_game_objects"] = request.MaxGameObjects,
+            };
+            if (!string.IsNullOrWhiteSpace(request.GameObjectPath))
+            {
+                parameters["game_object_path"] = request.GameObjectPath;
+            }
+
+            var payload = await ExecuteSyncToolAsync(ToolNames.GetPrefabHierarchy, parameters, timeoutMs, token);
+            return new GetPrefabHierarchyResult(payload);
+        }, cancellationToken);
+    }
+
+    public Task<GetPrefabComponentInfoResult> GetPrefabComponentInfoAsync(GetPrefabComponentInfoRequest request, CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            PruneJobs();
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPrefabComponentInfo);
+            var parameters = new JsonObject
+            {
+                ["prefab_path"] = request.PrefabPath,
+                ["game_object_path"] = request.GameObjectPath,
+                ["index"] = request.Index,
+                ["max_array_elements"] = request.MaxArrayElements,
+            };
+            if (request.Fields is not null)
+            {
+                var fieldsArray = new JsonArray();
+                foreach (var f in request.Fields)
+                {
+                    fieldsArray.Add(f);
+                }
+
+                parameters["fields"] = fieldsArray;
+            }
+
+            var payload = await ExecuteSyncToolAsync(ToolNames.GetPrefabComponentInfo, parameters, timeoutMs, token);
+            return new GetPrefabComponentInfoResult(payload);
+        }, cancellationToken);
+    }
+
+    public Task<ManagePrefabComponentResult> ManagePrefabComponentAsync(ManagePrefabComponentRequest request, CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            PruneJobs();
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManagePrefabComponent);
+            var parameters = new JsonObject
+            {
+                ["prefab_path"] = request.PrefabPath,
+                ["action"] = request.Action,
+                ["game_object_path"] = request.GameObjectPath,
+            };
+            if (!string.IsNullOrWhiteSpace(request.ComponentType))
+            {
+                parameters["component_type"] = request.ComponentType;
+            }
+
+            if (request.Index.HasValue)
+            {
+                parameters["index"] = request.Index.Value;
+            }
+
+            if (request.NewIndex.HasValue)
+            {
+                parameters["new_index"] = request.NewIndex.Value;
+            }
+
+            if (request.Fields is not null)
+            {
+                parameters["fields"] = request.Fields.DeepClone();
+            }
+
+            var payload = await ExecuteSyncToolAsync(ToolNames.ManagePrefabComponent, parameters, timeoutMs, token);
+            return new ManagePrefabComponentResult(payload);
         }, cancellationToken);
     }
 

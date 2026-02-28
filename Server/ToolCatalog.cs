@@ -215,15 +215,15 @@ internal static class ToolCatalog
                 },
                 ["additionalProperties"] = false,
             }),
-        [ToolNames.GetComponentInfo] = new(
-            ToolNames.GetComponentInfo,
+        [ToolNames.GetSceneComponentInfo] = new(
+            ToolNames.GetSceneComponentInfo,
             "sync",
             false,
             10000,
             30000,
             false,
             true,
-            "Returns serialized field values of a specific component.",
+            "Returns serialized field values of a specific component on a scene GameObject.",
             new JsonObject
             {
                 ["type"] = "object",
@@ -258,15 +258,15 @@ internal static class ToolCatalog
                 ["required"] = new JsonArray("game_object_path", "index"),
                 ["additionalProperties"] = false,
             }),
-        [ToolNames.ManageComponent] = new(
-            ToolNames.ManageComponent,
+        [ToolNames.ManageSceneComponent] = new(
+            ToolNames.ManageSceneComponent,
             "sync",
             false,
             10000,
             30000,
             false,
             false,
-            "Adds, updates, removes, or reorders components.",
+            "Adds, updates, removes, or reorders components on a scene GameObject.",
             new JsonObject
             {
                 ["type"] = "object",
@@ -308,6 +308,155 @@ internal static class ToolCatalog
                     },
                 },
                 ["required"] = new JsonArray("action", "game_object_path"),
+                ["additionalProperties"] = false,
+            }),
+        [ToolNames.GetPrefabHierarchy] = new(
+            ToolNames.GetPrefabHierarchy,
+            "sync",
+            false,
+            10000,
+            30000,
+            false,
+            true,
+            "Returns a Prefab asset's GameObject tree with component type names.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["prefab_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Asset path of the Prefab (e.g. \"Assets/Prefabs/Player.prefab\").",
+                    },
+                    ["game_object_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Optional: path within the Prefab to start from. \"\" or \"/\" or omitted = root.",
+                    },
+                    ["max_depth"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = SceneToolLimits.MaxDepthMin,
+                        ["maximum"] = SceneToolLimits.MaxDepthMax,
+                        ["default"] = SceneToolLimits.MaxDepthDefault,
+                        ["description"] = "Maximum depth of the hierarchy tree to traverse. 0 returns only the specified level.",
+                    },
+                    ["max_game_objects"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = SceneToolLimits.MaxGameObjectsMin,
+                        ["maximum"] = SceneToolLimits.MaxGameObjectsMax,
+                        ["default"] = SceneToolLimits.MaxGameObjectsDefault,
+                        ["description"] = "Maximum number of GameObjects to include in the response.",
+                    },
+                },
+                ["required"] = new JsonArray("prefab_path"),
+                ["additionalProperties"] = false,
+            }),
+        [ToolNames.GetPrefabComponentInfo] = new(
+            ToolNames.GetPrefabComponentInfo,
+            "sync",
+            false,
+            10000,
+            30000,
+            false,
+            true,
+            "Returns serialized field values of a specific component in a Prefab asset.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["prefab_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Asset path of the Prefab.",
+                    },
+                    ["game_object_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Path within the Prefab. \"\" or \"/\" = root.",
+                    },
+                    ["index"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 0,
+                        ["description"] = "0-based component index from get_prefab_hierarchy.",
+                    },
+                    ["fields"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject { ["type"] = "string" },
+                        ["description"] = "Optional: field names to return.",
+                    },
+                    ["max_array_elements"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = SceneToolLimits.MaxArrayElementsMin,
+                        ["maximum"] = SceneToolLimits.MaxArrayElementsMax,
+                        ["default"] = SceneToolLimits.MaxArrayElementsDefault,
+                        ["description"] = "Maximum number of array/List elements to expand per field.",
+                    },
+                },
+                ["required"] = new JsonArray("prefab_path", "game_object_path", "index"),
+                ["additionalProperties"] = false,
+            }),
+        [ToolNames.ManagePrefabComponent] = new(
+            ToolNames.ManagePrefabComponent,
+            "sync",
+            false,
+            10000,
+            30000,
+            false,
+            false,
+            "Adds, updates, removes, or reorders components in a Prefab asset.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["prefab_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Asset path of the Prefab.",
+                    },
+                    ["action"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = ManageActions.ToJsonArray(),
+                        ["description"] = "Operation to perform. 'add': requires component_type. 'update': requires index and fields. 'remove': requires index. 'move': requires index and new_index.",
+                    },
+                    ["game_object_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Path within the Prefab. \"\" or \"/\" = root.",
+                    },
+                    ["component_type"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Fully qualified or simple name of the component type to add. Required for 'add' action.",
+                    },
+                    ["index"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 0,
+                        ["description"] = "0-based component index. Required for 'update'/'remove'/'move'. Optional for 'add' to specify insertion position.",
+                    },
+                    ["new_index"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 0,
+                        ["description"] = "Target position for 'move' action. Required for 'move' only.",
+                    },
+                    ["fields"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["description"] = "Key-value map of serialized field names to values. Applicable to 'add' and 'update' actions.",
+                        ["additionalProperties"] = true,
+                    },
+                },
+                ["required"] = new JsonArray("prefab_path", "action", "game_object_path"),
                 ["additionalProperties"] = false,
             }),
     };

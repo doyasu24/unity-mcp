@@ -68,8 +68,8 @@ public sealed class ToolCatalogTests
         var tools = ToolCatalog.BuildMcpTools();
 
         AssertToolExists(tools, ToolNames.GetSceneHierarchy);
-        AssertToolExists(tools, ToolNames.GetComponentInfo);
-        AssertToolExists(tools, ToolNames.ManageComponent);
+        AssertToolExists(tools, ToolNames.GetSceneComponentInfo);
+        AssertToolExists(tools, ToolNames.ManageSceneComponent);
     }
 
     [Fact]
@@ -78,15 +78,15 @@ public sealed class ToolCatalogTests
         var tools = ToolCatalog.BuildUnityCapabilityTools();
 
         AssertSyncToolWithoutCancel(tools, ToolNames.GetSceneHierarchy);
-        AssertSyncToolWithoutCancel(tools, ToolNames.GetComponentInfo);
-        AssertSyncToolWithoutCancel(tools, ToolNames.ManageComponent);
+        AssertSyncToolWithoutCancel(tools, ToolNames.GetSceneComponentInfo);
+        AssertSyncToolWithoutCancel(tools, ToolNames.ManageSceneComponent);
     }
 
     [Fact]
     public void BuildMcpTools_ManageComponentSchema_HasActionEnum()
     {
         var tools = ToolCatalog.BuildMcpTools();
-        var manageComponent = AssertToolExists(tools, ToolNames.ManageComponent);
+        var manageComponent = AssertToolExists(tools, ToolNames.ManageSceneComponent);
         var schema = Assert.IsType<JsonObject>(manageComponent["inputSchema"]);
         var properties = Assert.IsType<JsonObject>(schema["properties"]);
         var action = Assert.IsType<JsonObject>(properties["action"]);
@@ -102,7 +102,7 @@ public sealed class ToolCatalogTests
     public void BuildMcpTools_GetComponentInfoSchema_RequiresGameObjectPathAndIndex()
     {
         var tools = ToolCatalog.BuildMcpTools();
-        var getComponentInfo = AssertToolExists(tools, ToolNames.GetComponentInfo);
+        var getComponentInfo = AssertToolExists(tools, ToolNames.GetSceneComponentInfo);
         var schema = Assert.IsType<JsonObject>(getComponentInfo["inputSchema"]);
         var required = Assert.IsType<JsonArray>(schema["required"]);
 
@@ -123,7 +123,83 @@ public sealed class ToolCatalogTests
     public void BuildUnityCapabilityTools_ManageComponent_IsNotRetryable()
     {
         var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.ManageComponent);
+        var tool = AssertToolExists(tools, ToolNames.ManageSceneComponent);
+        Assert.False(tool["execution_error_retryable"]?.GetValue<bool>());
+    }
+
+    [Fact]
+    public void BuildMcpTools_ContainsPrefabTools()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+
+        AssertToolExists(tools, ToolNames.GetPrefabHierarchy);
+        AssertToolExists(tools, ToolNames.GetPrefabComponentInfo);
+        AssertToolExists(tools, ToolNames.ManagePrefabComponent);
+    }
+
+    [Fact]
+    public void BuildUnityCapabilityTools_ContainsPrefabTools()
+    {
+        var tools = ToolCatalog.BuildUnityCapabilityTools();
+
+        AssertSyncToolWithoutCancel(tools, ToolNames.GetPrefabHierarchy);
+        AssertSyncToolWithoutCancel(tools, ToolNames.GetPrefabComponentInfo);
+        AssertSyncToolWithoutCancel(tools, ToolNames.ManagePrefabComponent);
+    }
+
+    [Fact]
+    public void BuildMcpTools_GetPrefabHierarchySchema_RequiresPrefabPath()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.GetPrefabHierarchy);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var required = Assert.IsType<JsonArray>(schema["required"]);
+
+        var requiredNames = required.Select(n => n?.GetValue<string>()).ToList();
+        Assert.Contains("prefab_path", requiredNames);
+    }
+
+    [Fact]
+    public void BuildMcpTools_GetPrefabComponentInfoSchema_RequiresPrefabPathGameObjectPathAndIndex()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.GetPrefabComponentInfo);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var required = Assert.IsType<JsonArray>(schema["required"]);
+
+        var requiredNames = required.Select(n => n?.GetValue<string>()).ToList();
+        Assert.Contains("prefab_path", requiredNames);
+        Assert.Contains("game_object_path", requiredNames);
+        Assert.Contains("index", requiredNames);
+    }
+
+    [Fact]
+    public void BuildMcpTools_ManagePrefabComponentSchema_RequiresPrefabPathActionGameObjectPath()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.ManagePrefabComponent);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var required = Assert.IsType<JsonArray>(schema["required"]);
+
+        var requiredNames = required.Select(n => n?.GetValue<string>()).ToList();
+        Assert.Contains("prefab_path", requiredNames);
+        Assert.Contains("action", requiredNames);
+        Assert.Contains("game_object_path", requiredNames);
+    }
+
+    [Fact]
+    public void BuildUnityCapabilityTools_GetPrefabHierarchy_IsRetryable()
+    {
+        var tools = ToolCatalog.BuildUnityCapabilityTools();
+        var tool = AssertToolExists(tools, ToolNames.GetPrefabHierarchy);
+        Assert.True(tool["execution_error_retryable"]?.GetValue<bool>());
+    }
+
+    [Fact]
+    public void BuildUnityCapabilityTools_ManagePrefabComponent_IsNotRetryable()
+    {
+        var tools = ToolCatalog.BuildUnityCapabilityTools();
+        var tool = AssertToolExists(tools, ToolNames.ManagePrefabComponent);
         Assert.False(tool["execution_error_retryable"]?.GetValue<bool>());
     }
 

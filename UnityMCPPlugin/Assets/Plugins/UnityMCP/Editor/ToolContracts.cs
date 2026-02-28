@@ -12,8 +12,11 @@ namespace UnityMcpPlugin
         internal const string GetJobStatus = "get_job_status";
         internal const string Cancel = "cancel";
         internal const string GetSceneHierarchy = "get_scene_hierarchy";
-        internal const string GetComponentInfo = "get_component_info";
-        internal const string ManageComponent = "manage_component";
+        internal const string GetSceneComponentInfo = "get_scene_component_info";
+        internal const string ManageSceneComponent = "manage_scene_component";
+        internal const string GetPrefabHierarchy = "get_prefab_hierarchy";
+        internal const string GetPrefabComponentInfo = "get_prefab_component_info";
+        internal const string ManagePrefabComponent = "manage_prefab_component";
     }
 
     internal static class ToolLimits

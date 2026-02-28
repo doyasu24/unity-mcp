@@ -16,7 +16,8 @@ namespace UnityMcpPlugin.Tools
         internal static SerializeResult Serialize(
             Component component,
             HashSet<string> fieldFilter,
-            int maxArrayElements)
+            int maxArrayElements,
+            ToolContext context = null)
         {
             var so = new SerializedObject(component);
             var fields = new JObject();
@@ -48,7 +49,7 @@ namespace UnityMcpPlugin.Tools
                     break;
                 }
 
-                var value = SerializeProperty(iterator, maxArrayElements, 0, ref fieldCount);
+                var value = SerializeProperty(iterator, maxArrayElements, 0, ref fieldCount, context);
                 fields[name] = value;
                 fieldCount++;
 
@@ -63,7 +64,7 @@ namespace UnityMcpPlugin.Tools
             return new SerializeResult { Fields = fields, FieldsTruncated = truncated };
         }
 
-        private static JToken SerializeProperty(SerializedProperty prop, int maxArrayElements, int depth, ref int fieldCount)
+        private static JToken SerializeProperty(SerializedProperty prop, int maxArrayElements, int depth, ref int fieldCount, ToolContext context = null)
         {
             if (depth > SceneToolLimits.MaxNestingDepth)
             {
@@ -216,7 +217,7 @@ namespace UnityMcpPlugin.Tools
                     return SerializeEnum(prop);
 
                 case SerializedPropertyType.ObjectReference:
-                    return SerializeObjectReference(prop);
+                    return SerializeObjectReference(prop, context);
 
                 case SerializedPropertyType.ArraySize:
                     return new JValue(prop.intValue);
@@ -224,12 +225,12 @@ namespace UnityMcpPlugin.Tools
                 default:
                     if (prop.isArray)
                     {
-                        return SerializeArray(prop, maxArrayElements, depth, ref fieldCount);
+                        return SerializeArray(prop, maxArrayElements, depth, ref fieldCount, context);
                     }
 
                     if (prop.hasChildren)
                     {
-                        return SerializeGeneric(prop, maxArrayElements, depth, ref fieldCount);
+                        return SerializeGeneric(prop, maxArrayElements, depth, ref fieldCount, context);
                     }
 
                     return JValue.CreateNull();
@@ -293,7 +294,7 @@ namespace UnityMcpPlugin.Tools
             };
         }
 
-        private static JToken SerializeObjectReference(SerializedProperty prop)
+        private static JToken SerializeObjectReference(SerializedProperty prop, ToolContext context = null)
         {
             var obj = prop.objectReferenceValue;
             if (obj == null)
@@ -318,11 +319,32 @@ namespace UnityMcpPlugin.Tools
 
             if (EditorUtility.IsPersistent(obj))
             {
-                wrapper["is_asset_ref"] = true;
                 var assetPath = AssetDatabase.GetAssetPath(obj);
-                if (!string.IsNullOrEmpty(assetPath))
+                if (context != null && context.IsPrefabContext && context.IsSamePrefabReference(assetPath))
                 {
-                    wrapper["asset_path"] = assetPath;
+                    wrapper["is_object_ref"] = true;
+                    GameObject refGo = null;
+                    if (obj is GameObject go)
+                    {
+                        refGo = go;
+                    }
+                    else if (obj is Component comp)
+                    {
+                        refGo = comp.gameObject;
+                    }
+
+                    if (refGo != null)
+                    {
+                        wrapper["ref_path"] = context.GetPath(refGo);
+                    }
+                }
+                else
+                {
+                    wrapper["is_asset_ref"] = true;
+                    if (!string.IsNullOrEmpty(assetPath))
+                    {
+                        wrapper["asset_path"] = assetPath;
+                    }
                 }
             }
             else
@@ -340,14 +362,15 @@ namespace UnityMcpPlugin.Tools
 
                 if (refGo != null)
                 {
-                    wrapper["ref_path"] = GameObjectResolver.GetHierarchyPath(refGo);
+                    var path = context != null ? context.GetPath(refGo) : GameObjectResolver.GetHierarchyPath(refGo);
+                    wrapper["ref_path"] = path;
                 }
             }
 
             return wrapper;
         }
 
-        private static JToken SerializeArray(SerializedProperty prop, int maxArrayElements, int depth, ref int fieldCount)
+        private static JToken SerializeArray(SerializedProperty prop, int maxArrayElements, int depth, ref int fieldCount, ToolContext context = null)
         {
             var totalCount = prop.arraySize;
             var typeName = prop.arrayElementType;
@@ -379,7 +402,7 @@ namespace UnityMcpPlugin.Tools
             for (var i = 0; i < count; i++)
             {
                 var elem = prop.GetArrayElementAtIndex(i);
-                array.Add(SerializeProperty(elem, maxArrayElements, depth + 1, ref fieldCount));
+                array.Add(SerializeProperty(elem, maxArrayElements, depth + 1, ref fieldCount, context));
             }
 
             wrapper["value"] = array;
@@ -393,7 +416,7 @@ namespace UnityMcpPlugin.Tools
             return wrapper;
         }
 
-        private static JToken SerializeGeneric(SerializedProperty prop, int maxArrayElements, int depth, ref int fieldCount)
+        private static JToken SerializeGeneric(SerializedProperty prop, int maxArrayElements, int depth, ref int fieldCount, ToolContext context = null)
         {
             var typeName = prop.type;
             var value = new JObject();
@@ -423,7 +446,7 @@ namespace UnityMcpPlugin.Tools
                     break;
                 }
 
-                value[name] = SerializeProperty(child, maxArrayElements, depth + 1, ref fieldCount);
+                value[name] = SerializeProperty(child, maxArrayElements, depth + 1, ref fieldCount, context);
                 fieldCount++;
             }
             while (child.NextVisible(false));
