@@ -116,6 +116,16 @@ namespace UnityMcpPlugin
                 return await MainThreadDispatcher.InvokeAsync(() => ManagePrefabComponentTool.Execute(parameters));
             }
 
+            if (string.Equals(toolName, ToolNames.ManageSceneGameObject, StringComparison.Ordinal))
+            {
+                return await MainThreadDispatcher.InvokeAsync(() => ManageGameObjectTool.Execute(parameters));
+            }
+
+            if (string.Equals(toolName, ToolNames.ManagePrefabGameObject, StringComparison.Ordinal))
+            {
+                return await MainThreadDispatcher.InvokeAsync(() => ManagePrefabGameObjectTool.Execute(parameters));
+            }
+
             throw new PluginException("ERR_UNKNOWN_COMMAND", $"unsupported tool: {toolName}");
         }
 

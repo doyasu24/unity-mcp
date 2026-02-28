@@ -17,6 +17,8 @@ namespace UnityMcpPlugin
         internal const string GetPrefabHierarchy = "get_prefab_hierarchy";
         internal const string GetPrefabComponentInfo = "get_prefab_component_info";
         internal const string ManagePrefabComponent = "manage_prefab_component";
+        internal const string ManageSceneGameObject = "manage_scene_game_object";
+        internal const string ManagePrefabGameObject = "manage_prefab_game_object";
     }
 
     internal static class ToolLimits

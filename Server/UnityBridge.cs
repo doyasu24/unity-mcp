@@ -429,6 +429,129 @@ internal sealed class UnityBridge
         }, cancellationToken);
     }
 
+    public Task<ManageSceneGameObjectResult> ManageSceneGameObjectAsync(ManageSceneGameObjectRequest request, CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            PruneJobs();
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageSceneGameObject);
+            var parameters = new JsonObject
+            {
+                ["action"] = request.Action,
+            };
+            if (!string.IsNullOrWhiteSpace(request.GameObjectPath))
+            {
+                parameters["game_object_path"] = request.GameObjectPath;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.ParentPath))
+            {
+                parameters["parent_path"] = request.ParentPath;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Name))
+            {
+                parameters["name"] = request.Name;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Tag))
+            {
+                parameters["tag"] = request.Tag;
+            }
+
+            if (request.Layer.HasValue)
+            {
+                parameters["layer"] = request.Layer.Value;
+            }
+
+            if (request.Active.HasValue)
+            {
+                parameters["active"] = request.Active.Value;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.PrimitiveType))
+            {
+                parameters["primitive_type"] = request.PrimitiveType;
+            }
+
+            if (request.WorldPositionStays.HasValue)
+            {
+                parameters["world_position_stays"] = request.WorldPositionStays.Value;
+            }
+
+            if (request.SiblingIndex.HasValue)
+            {
+                parameters["sibling_index"] = request.SiblingIndex.Value;
+            }
+
+            var payload = await ExecuteSyncToolAsync(ToolNames.ManageSceneGameObject, parameters, timeoutMs, token);
+            return new ManageSceneGameObjectResult(payload);
+        }, cancellationToken);
+    }
+
+    public Task<ManagePrefabGameObjectResult> ManagePrefabGameObjectAsync(ManagePrefabGameObjectRequest request, CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            PruneJobs();
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManagePrefabGameObject);
+            var parameters = new JsonObject
+            {
+                ["prefab_path"] = request.PrefabPath,
+                ["action"] = request.Action,
+            };
+            if (!string.IsNullOrWhiteSpace(request.GameObjectPath))
+            {
+                parameters["game_object_path"] = request.GameObjectPath;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.ParentPath))
+            {
+                parameters["parent_path"] = request.ParentPath;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Name))
+            {
+                parameters["name"] = request.Name;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Tag))
+            {
+                parameters["tag"] = request.Tag;
+            }
+
+            if (request.Layer.HasValue)
+            {
+                parameters["layer"] = request.Layer.Value;
+            }
+
+            if (request.Active.HasValue)
+            {
+                parameters["active"] = request.Active.Value;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.PrimitiveType))
+            {
+                parameters["primitive_type"] = request.PrimitiveType;
+            }
+
+            if (request.WorldPositionStays.HasValue)
+            {
+                parameters["world_position_stays"] = request.WorldPositionStays.Value;
+            }
+
+            if (request.SiblingIndex.HasValue)
+            {
+                parameters["sibling_index"] = request.SiblingIndex.Value;
+            }
+
+            var payload = await ExecuteSyncToolAsync(ToolNames.ManagePrefabGameObject, parameters, timeoutMs, token);
+            return new ManagePrefabGameObjectResult(payload);
+        }, cancellationToken);
+    }
+
     public Task<RunTestsResult> RunTestsAsync(RunTestsRequest request, CancellationToken cancellationToken)
     {
         return _scheduler.EnqueueAsync(async token =>

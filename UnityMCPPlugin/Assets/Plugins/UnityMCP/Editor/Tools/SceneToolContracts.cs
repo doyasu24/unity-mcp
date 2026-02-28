@@ -13,6 +13,8 @@ namespace UnityMcpPlugin.Tools
         internal const string ReferenceNotFound = "ERR_REFERENCE_NOT_FOUND";
         internal const string ComponentDependency = "ERR_COMPONENT_DEPENDENCY";
         internal const string PlayModeActive = "ERR_PLAY_MODE_ACTIVE";
+        internal const string CircularHierarchy = "ERR_CIRCULAR_HIERARCHY";
+        internal const string InvalidTag = "ERR_INVALID_TAG";
     }
 
     internal static class SceneToolLimits

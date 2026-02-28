@@ -55,6 +55,8 @@ internal sealed class McpToolService
             ToolNames.GetPrefabHierarchy => (await _unityBridge.GetPrefabHierarchyAsync(ParseGetPrefabHierarchyRequest(arguments), cancellationToken)).Payload,
             ToolNames.GetPrefabComponentInfo => (await _unityBridge.GetPrefabComponentInfoAsync(ParseGetPrefabComponentInfoRequest(arguments), cancellationToken)).Payload,
             ToolNames.ManagePrefabComponent => (await _unityBridge.ManagePrefabComponentAsync(ParseManagePrefabComponentRequest(arguments), cancellationToken)).Payload,
+            ToolNames.ManageSceneGameObject => (await _unityBridge.ManageSceneGameObjectAsync(ParseManageSceneGameObjectRequest(arguments), cancellationToken)).Payload,
+            ToolNames.ManagePrefabGameObject => (await _unityBridge.ManagePrefabGameObjectAsync(ParseManagePrefabGameObjectRequest(arguments), cancellationToken)).Payload,
             _ => throw new McpException(ErrorCodes.UnknownCommand, $"Unknown tool: {toolName}"),
         };
     }
@@ -428,6 +430,172 @@ internal sealed class McpToolService
         }
 
         return new ManagePrefabComponentRequest(prefabPath, action!, gameObjectPath, componentType, index, newIndex, fields);
+    }
+
+    private static ManageSceneGameObjectRequest ParseManageSceneGameObjectRequest(JsonObject arguments)
+    {
+        var action = JsonHelpers.GetString(arguments, "action");
+        if (!GameObjectActions.IsSupported(action))
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"action must be one of {GameObjectActions.Create}|{GameObjectActions.Update}|{GameObjectActions.Delete}|{GameObjectActions.Reparent}",
+                new JsonObject { ["action"] = action });
+        }
+
+        var gameObjectPath = JsonHelpers.GetString(arguments, "game_object_path");
+        var parentPath = JsonHelpers.GetString(arguments, "parent_path");
+        var name = JsonHelpers.GetString(arguments, "name");
+        var tag = JsonHelpers.GetString(arguments, "tag");
+        var layer = JsonHelpers.GetInt(arguments, "layer");
+        bool? active = null;
+        if (arguments.TryGetPropertyValue("active", out var activeNode) && activeNode is not null)
+        {
+            active = activeNode.GetValue<bool>();
+        }
+
+        var primitiveType = JsonHelpers.GetString(arguments, "primitive_type");
+        bool? worldPositionStays = null;
+        if (arguments.TryGetPropertyValue("world_position_stays", out var wpsNode) && wpsNode is not null)
+        {
+            worldPositionStays = wpsNode.GetValue<bool>();
+        }
+
+        var siblingIndex = JsonHelpers.GetInt(arguments, "sibling_index");
+
+        switch (action)
+        {
+            case GameObjectActions.Create:
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "name is required for 'create' action");
+                }
+
+                if (primitiveType is not null && !PrimitiveTypes.IsSupported(primitiveType))
+                {
+                    throw new McpException(
+                        ErrorCodes.InvalidParams,
+                        $"primitive_type must be one of Cube|Sphere|Capsule|Cylinder|Plane|Quad",
+                        new JsonObject { ["primitive_type"] = primitiveType });
+                }
+
+                break;
+            case GameObjectActions.Update:
+                if (string.IsNullOrWhiteSpace(gameObjectPath))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "game_object_path is required for 'update' action");
+                }
+
+                break;
+            case GameObjectActions.Delete:
+                if (string.IsNullOrWhiteSpace(gameObjectPath))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "game_object_path is required for 'delete' action");
+                }
+
+                break;
+            case GameObjectActions.Reparent:
+                if (string.IsNullOrWhiteSpace(gameObjectPath))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "game_object_path is required for 'reparent' action");
+                }
+
+                break;
+        }
+
+        if (layer.HasValue && (layer.Value < 0 || layer.Value > 31))
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                "layer must be between 0 and 31",
+                new JsonObject { ["layer"] = layer.Value });
+        }
+
+        return new ManageSceneGameObjectRequest(action!, gameObjectPath, parentPath, name, tag, layer, active, primitiveType, worldPositionStays, siblingIndex);
+    }
+
+    private static ManagePrefabGameObjectRequest ParseManagePrefabGameObjectRequest(JsonObject arguments)
+    {
+        var prefabPath = ParseRequiredPrefabPath(arguments);
+
+        var action = JsonHelpers.GetString(arguments, "action");
+        if (!GameObjectActions.IsSupported(action))
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"action must be one of {GameObjectActions.Create}|{GameObjectActions.Update}|{GameObjectActions.Delete}|{GameObjectActions.Reparent}",
+                new JsonObject { ["action"] = action });
+        }
+
+        var gameObjectPath = JsonHelpers.GetString(arguments, "game_object_path");
+        var parentPath = JsonHelpers.GetString(arguments, "parent_path");
+        var name = JsonHelpers.GetString(arguments, "name");
+        var tag = JsonHelpers.GetString(arguments, "tag");
+        var layer = JsonHelpers.GetInt(arguments, "layer");
+        bool? active = null;
+        if (arguments.TryGetPropertyValue("active", out var activeNode) && activeNode is not null)
+        {
+            active = activeNode.GetValue<bool>();
+        }
+
+        var primitiveType = JsonHelpers.GetString(arguments, "primitive_type");
+        bool? worldPositionStays = null;
+        if (arguments.TryGetPropertyValue("world_position_stays", out var wpsNode) && wpsNode is not null)
+        {
+            worldPositionStays = wpsNode.GetValue<bool>();
+        }
+
+        var siblingIndex = JsonHelpers.GetInt(arguments, "sibling_index");
+
+        switch (action)
+        {
+            case GameObjectActions.Create:
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "name is required for 'create' action");
+                }
+
+                if (primitiveType is not null && !PrimitiveTypes.IsSupported(primitiveType))
+                {
+                    throw new McpException(
+                        ErrorCodes.InvalidParams,
+                        $"primitive_type must be one of Cube|Sphere|Capsule|Cylinder|Plane|Quad",
+                        new JsonObject { ["primitive_type"] = primitiveType });
+                }
+
+                break;
+            case GameObjectActions.Update:
+                if (string.IsNullOrWhiteSpace(gameObjectPath))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "game_object_path is required for 'update' action");
+                }
+
+                break;
+            case GameObjectActions.Delete:
+                if (string.IsNullOrWhiteSpace(gameObjectPath))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "game_object_path is required for 'delete' action");
+                }
+
+                break;
+            case GameObjectActions.Reparent:
+                if (string.IsNullOrWhiteSpace(gameObjectPath))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "game_object_path is required for 'reparent' action");
+                }
+
+                break;
+        }
+
+        if (layer.HasValue && (layer.Value < 0 || layer.Value > 31))
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                "layer must be between 0 and 31",
+                new JsonObject { ["layer"] = layer.Value });
+        }
+
+        return new ManagePrefabGameObjectRequest(prefabPath, action!, gameObjectPath, parentPath, name, tag, layer, active, primitiveType, worldPositionStays, siblingIndex);
     }
 }
 

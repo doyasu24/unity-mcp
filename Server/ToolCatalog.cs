@@ -459,6 +459,159 @@ internal static class ToolCatalog
                 ["required"] = new JsonArray("prefab_path", "action", "game_object_path"),
                 ["additionalProperties"] = false,
             }),
+        [ToolNames.ManageSceneGameObject] = new(
+            ToolNames.ManageSceneGameObject,
+            "sync",
+            false,
+            10000,
+            30000,
+            false,
+            false,
+            "Creates, updates, deletes, or reparents GameObjects in the active scene.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["action"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = GameObjectActions.ToJsonArray(),
+                        ["description"] = "Operation to perform. 'create': creates a new GameObject. 'update': modifies name/tag/layer/active. 'delete': destroys the GameObject and all children. 'reparent': moves to a new parent.",
+                    },
+                    ["game_object_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Scene hierarchy path of the target GameObject. Required for update/delete/reparent.",
+                    },
+                    ["parent_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Parent GameObject path. For create: optional (omit for scene root). For reparent: new parent path (omit or null for scene root).",
+                    },
+                    ["name"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Name of the GameObject. Required for create. Optional for update (renames the GO).",
+                    },
+                    ["tag"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Tag to assign. Optional for create/update.",
+                    },
+                    ["layer"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 0,
+                        ["maximum"] = 31,
+                        ["description"] = "Layer index (0-31). Optional for create/update.",
+                    },
+                    ["active"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["description"] = "Active state. Optional for create/update. Default: true for create.",
+                    },
+                    ["primitive_type"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = PrimitiveTypes.ToJsonArray(),
+                        ["description"] = "Creates a Unity primitive. Optional for create only.",
+                    },
+                    ["world_position_stays"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["default"] = true,
+                        ["description"] = "Preserve world position during reparent. Optional for reparent.",
+                    },
+                    ["sibling_index"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 0,
+                        ["description"] = "Position among siblings. Optional for create/reparent.",
+                    },
+                },
+                ["required"] = new JsonArray("action"),
+                ["additionalProperties"] = false,
+            }),
+        [ToolNames.ManagePrefabGameObject] = new(
+            ToolNames.ManagePrefabGameObject,
+            "sync",
+            false,
+            10000,
+            30000,
+            false,
+            false,
+            "Creates, updates, deletes, or reparents GameObjects in a Prefab asset.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["prefab_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Asset path of the Prefab (e.g. \"Assets/Prefabs/Player.prefab\").",
+                    },
+                    ["action"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = GameObjectActions.ToJsonArray(),
+                        ["description"] = "Operation to perform. 'create': creates a new GameObject. 'update': modifies name/tag/layer/active. 'delete': destroys the GameObject and all children. 'reparent': moves to a new parent.",
+                    },
+                    ["game_object_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Path within the Prefab of the target GameObject. Required for update/delete/reparent.",
+                    },
+                    ["parent_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Parent path within the Prefab. For create: optional (omit for prefab root). For reparent: new parent path (omit for prefab root).",
+                    },
+                    ["name"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Name of the GameObject. Required for create. Optional for update (renames the GO).",
+                    },
+                    ["tag"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Tag to assign. Optional for create/update.",
+                    },
+                    ["layer"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 0,
+                        ["maximum"] = 31,
+                        ["description"] = "Layer index (0-31). Optional for create/update.",
+                    },
+                    ["active"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["description"] = "Active state. Optional for create/update. Default: true for create.",
+                    },
+                    ["primitive_type"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = PrimitiveTypes.ToJsonArray(),
+                        ["description"] = "Creates a Unity primitive. Optional for create only.",
+                    },
+                    ["world_position_stays"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["default"] = true,
+                        ["description"] = "Preserve world position during reparent. Optional for reparent.",
+                    },
+                    ["sibling_index"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 0,
+                        ["description"] = "Position among siblings. Optional for create/reparent.",
+                    },
+                },
+                ["required"] = new JsonArray("prefab_path", "action"),
+                ["additionalProperties"] = false,
+            }),
     };
 
     public static JsonArray BuildMcpTools()

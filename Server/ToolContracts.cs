@@ -19,6 +19,8 @@ internal static class ToolNames
     public const string GetPrefabHierarchy = "get_prefab_hierarchy";
     public const string GetPrefabComponentInfo = "get_prefab_component_info";
     public const string ManagePrefabComponent = "manage_prefab_component";
+    public const string ManageSceneGameObject = "manage_scene_game_object";
+    public const string ManagePrefabGameObject = "manage_prefab_game_object";
 }
 
 internal static class ToolLimits
@@ -39,6 +41,44 @@ internal static class SceneToolLimits
     public const int MaxArrayElementsMin = 0;
     public const int MaxArrayElementsMax = 64;
     public const int MaxArrayElementsDefault = 16;
+}
+
+internal static class GameObjectActions
+{
+    public const string Create = "create";
+    public const string Update = "update";
+    public const string Delete = "delete";
+    public const string Reparent = "reparent";
+
+    public static bool IsSupported(string? action)
+    {
+        return action is Create or Update or Delete or Reparent;
+    }
+
+    public static JsonArray ToJsonArray()
+    {
+        return new JsonArray(Create, Update, Delete, Reparent);
+    }
+}
+
+internal static class PrimitiveTypes
+{
+    public const string Cube = "Cube";
+    public const string Sphere = "Sphere";
+    public const string Capsule = "Capsule";
+    public const string Cylinder = "Cylinder";
+    public const string Plane = "Plane";
+    public const string Quad = "Quad";
+
+    public static bool IsSupported(string? type)
+    {
+        return type is Cube or Sphere or Capsule or Cylinder or Plane or Quad;
+    }
+
+    public static JsonArray ToJsonArray()
+    {
+        return new JsonArray(Cube, Sphere, Capsule, Cylinder, Plane, Quad);
+    }
 }
 
 internal static class ManageActions
@@ -144,3 +184,11 @@ internal sealed record GetPrefabComponentInfoResult(JsonNode Payload);
 internal sealed record ManagePrefabComponentRequest(string PrefabPath, string Action, string GameObjectPath, string? ComponentType, int? Index, int? NewIndex, JsonObject? Fields);
 
 internal sealed record ManagePrefabComponentResult(JsonNode Payload);
+
+internal sealed record ManageSceneGameObjectRequest(string Action, string? GameObjectPath, string? ParentPath, string? Name, string? Tag, int? Layer, bool? Active, string? PrimitiveType, bool? WorldPositionStays, int? SiblingIndex);
+
+internal sealed record ManageSceneGameObjectResult(JsonNode Payload);
+
+internal sealed record ManagePrefabGameObjectRequest(string PrefabPath, string Action, string? GameObjectPath, string? ParentPath, string? Name, string? Tag, int? Layer, bool? Active, string? PrimitiveType, bool? WorldPositionStays, int? SiblingIndex);
+
+internal sealed record ManagePrefabGameObjectResult(JsonNode Payload);
