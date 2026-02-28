@@ -32,6 +32,115 @@ public sealed class McpToolServiceTests
         Assert.Equal(ErrorCodes.UnknownCommand, structured["code"]?.GetValue<string>());
     }
 
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForGetSceneHierarchy_InvalidMaxDepth()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject { ["max_depth"] = 999 };
+        var result = await service.CallToolAsync(ToolNames.GetSceneHierarchy, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForGetComponentInfo_MissingGameObjectPath()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject { ["index"] = 0 };
+        var result = await service.CallToolAsync(ToolNames.GetComponentInfo, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForGetComponentInfo_MissingIndex()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject { ["game_object_path"] = "/Player" };
+        var result = await service.CallToolAsync(ToolNames.GetComponentInfo, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageComponent_InvalidAction()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["action"] = "invalid",
+            ["game_object_path"] = "/Player",
+        };
+        var result = await service.CallToolAsync(ToolNames.ManageComponent, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageComponent_AddMissingComponentType()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["action"] = "add",
+            ["game_object_path"] = "/Player",
+        };
+        var result = await service.CallToolAsync(ToolNames.ManageComponent, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageComponent_UpdateMissingIndex()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["action"] = "update",
+            ["game_object_path"] = "/Player",
+            ["fields"] = new JsonObject { ["speed"] = 5 },
+        };
+        var result = await service.CallToolAsync(ToolNames.ManageComponent, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageComponent_MoveMissingNewIndex()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["action"] = "move",
+            ["game_object_path"] = "/Player",
+            ["index"] = 1,
+        };
+        var result = await service.CallToolAsync(ToolNames.ManageComponent, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
     private static McpToolService CreateService(RuntimeState runtimeState)
     {
         var scheduler = new RequestScheduler(Constants.QueueMaxSize);

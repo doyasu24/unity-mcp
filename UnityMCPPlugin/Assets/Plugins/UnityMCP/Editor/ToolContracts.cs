@@ -11,6 +11,9 @@ namespace UnityMcpPlugin
         internal const string RunTests = "run_tests";
         internal const string GetJobStatus = "get_job_status";
         internal const string Cancel = "cancel";
+        internal const string GetSceneHierarchy = "get_scene_hierarchy";
+        internal const string GetComponentInfo = "get_component_info";
+        internal const string ManageComponent = "manage_component";
     }
 
     internal static class ToolLimits

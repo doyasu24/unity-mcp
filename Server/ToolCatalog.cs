@@ -177,6 +177,139 @@ internal static class ToolCatalog
                 ["required"] = new JsonArray("job_id"),
                 ["additionalProperties"] = false,
             }),
+        [ToolNames.GetSceneHierarchy] = new(
+            ToolNames.GetSceneHierarchy,
+            "sync",
+            false,
+            10000,
+            30000,
+            false,
+            true,
+            "Returns the scene's GameObject tree with component type names.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["root_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Optional: hierarchy path of a root GameObject to start from. If omitted, returns the entire scene.",
+                    },
+                    ["max_depth"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = SceneToolLimits.MaxDepthMin,
+                        ["maximum"] = SceneToolLimits.MaxDepthMax,
+                        ["default"] = SceneToolLimits.MaxDepthDefault,
+                        ["description"] = "Maximum depth of the hierarchy tree to traverse. 0 returns only the root level.",
+                    },
+                    ["max_game_objects"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = SceneToolLimits.MaxGameObjectsMin,
+                        ["maximum"] = SceneToolLimits.MaxGameObjectsMax,
+                        ["default"] = SceneToolLimits.MaxGameObjectsDefault,
+                        ["description"] = "Maximum number of GameObjects to include in the response. When exceeded, the response is truncated and 'truncated' is set to true. Use 'root_path' to drill into a specific subtree.",
+                    },
+                },
+                ["additionalProperties"] = false,
+            }),
+        [ToolNames.GetComponentInfo] = new(
+            ToolNames.GetComponentInfo,
+            "sync",
+            false,
+            10000,
+            30000,
+            false,
+            true,
+            "Returns serialized field values of a specific component.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["game_object_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Scene hierarchy path of the target GameObject (e.g. \"/Canvas/Panel\" or \"Main Camera\").",
+                    },
+                    ["index"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 0,
+                        ["description"] = "0-based index of the component on the GameObject. Corresponds to the index from get_scene_hierarchy output.",
+                    },
+                    ["fields"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject { ["type"] = "string" },
+                        ["description"] = "Optional list of field names to return. When specified, only these fields are included in the response. When omitted, all serialized fields are returned.",
+                    },
+                    ["max_array_elements"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = SceneToolLimits.MaxArrayElementsMin,
+                        ["maximum"] = SceneToolLimits.MaxArrayElementsMax,
+                        ["default"] = SceneToolLimits.MaxArrayElementsDefault,
+                        ["description"] = "Maximum number of array/List elements to expand per field. Elements beyond this limit are truncated. 0 returns element count only.",
+                    },
+                },
+                ["required"] = new JsonArray("game_object_path", "index"),
+                ["additionalProperties"] = false,
+            }),
+        [ToolNames.ManageComponent] = new(
+            ToolNames.ManageComponent,
+            "sync",
+            false,
+            10000,
+            30000,
+            false,
+            false,
+            "Adds, updates, removes, or reorders components.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["action"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = ManageActions.ToJsonArray(),
+                        ["description"] = "Operation to perform. 'add': requires component_type. 'update': requires index and fields. 'remove': requires index. 'move': requires index and new_index.",
+                    },
+                    ["game_object_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Scene hierarchy path of the target GameObject (e.g. \"/Canvas/Panel/Button\" or \"Main Camera\"). Root objects can omit the leading slash.",
+                    },
+                    ["component_type"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Fully qualified or simple name of the component type to add (e.g. \"Rigidbody\", \"PlayerController\", \"UnityEngine.UI.Image\"). Required for 'add' action.",
+                    },
+                    ["index"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 0,
+                        ["description"] = "0-based component index on the GameObject (matches get_scene_hierarchy output). Required for 'update'/'remove'/'move' to identify the target component. Optional for 'add' to specify insertion position (must be >= 1 since index 0 is Transform; default: append to end).",
+                    },
+                    ["new_index"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 0,
+                        ["description"] = "Target position for 'move' action. Required for 'move' only.",
+                    },
+                    ["fields"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["description"] = "Key-value map of serialized field names to values. Applicable to 'add' and 'update' actions.",
+                        ["additionalProperties"] = true,
+                    },
+                },
+                ["required"] = new JsonArray("action", "game_object_path"),
+                ["additionalProperties"] = false,
+            }),
     };
 
     public static JsonArray BuildMcpTools()

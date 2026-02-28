@@ -11,17 +11,20 @@ graph LR
 
 ## Available Tools
 
-| Tool                  | What it does                                     |
-| --------------------- | ------------------------------------------------ |
-| `read_console`        | Reads Unity console entries.                     |
-| `clear_console`       | Clears Unity Console log entries.                |
-| `refresh_assets`      | Refreshes Unity Editor assets.                   |
-| `get_play_mode_state` | Gets current play/pause/stop state.              |
-| `control_play_mode`   | Controls play mode (`action`: start/stop/pause). |
-| `run_tests`           | Starts Unity tests as a cancellable job.         |
-| `get_editor_state`    | Returns current server/editor connection state.  |
-| `get_job_status`      | Checks state/result of a submitted test job.     |
-| `cancel_job`          | Requests cancellation for a running/queued job.  |
+| Tool                   | What it does                                                        |
+| ---------------------- | ------------------------------------------------------------------- |
+| `read_console`         | Reads Unity console entries.                                        |
+| `clear_console`        | Clears Unity Console log entries.                                   |
+| `refresh_assets`       | Refreshes Unity Editor assets.                                      |
+| `get_play_mode_state`  | Gets current play/pause/stop state.                                 |
+| `control_play_mode`    | Controls play mode (`action`: start/stop/pause).                    |
+| `run_tests`            | Runs Unity tests as a cancellable job (`mode`: all/edit/play).      |
+| `get_editor_state`     | Gets current server/editor connection state.                        |
+| `get_job_status`       | Gets state/result of a submitted test job.                          |
+| `cancel_job`           | Cancels a running or queued job.                                    |
+| `get_scene_hierarchy`  | Gets the scene's GameObject tree with component type names.         |
+| `get_component_info`   | Gets serialized field values of a specific component.               |
+| `manage_component`     | Manages components on a GameObject (`action`: add/update/remove/move). |
 
 ## Prerequisites
 

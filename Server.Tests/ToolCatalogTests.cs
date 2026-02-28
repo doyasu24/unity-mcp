@@ -62,6 +62,71 @@ public sealed class ToolCatalogTests
         Assert.False(schema["additionalProperties"]?.GetValue<bool>());
     }
 
+    [Fact]
+    public void BuildMcpTools_ContainsSceneAndComponentTools()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+
+        AssertToolExists(tools, ToolNames.GetSceneHierarchy);
+        AssertToolExists(tools, ToolNames.GetComponentInfo);
+        AssertToolExists(tools, ToolNames.ManageComponent);
+    }
+
+    [Fact]
+    public void BuildUnityCapabilityTools_ContainsSceneAndComponentTools()
+    {
+        var tools = ToolCatalog.BuildUnityCapabilityTools();
+
+        AssertSyncToolWithoutCancel(tools, ToolNames.GetSceneHierarchy);
+        AssertSyncToolWithoutCancel(tools, ToolNames.GetComponentInfo);
+        AssertSyncToolWithoutCancel(tools, ToolNames.ManageComponent);
+    }
+
+    [Fact]
+    public void BuildMcpTools_ManageComponentSchema_HasActionEnum()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var manageComponent = AssertToolExists(tools, ToolNames.ManageComponent);
+        var schema = Assert.IsType<JsonObject>(manageComponent["inputSchema"]);
+        var properties = Assert.IsType<JsonObject>(schema["properties"]);
+        var action = Assert.IsType<JsonObject>(properties["action"]);
+        var @enum = Assert.IsType<JsonArray>(action["enum"]);
+
+        Assert.Contains(ManageActions.Add, @enum.Select(node => node?.GetValue<string>()));
+        Assert.Contains(ManageActions.Update, @enum.Select(node => node?.GetValue<string>()));
+        Assert.Contains(ManageActions.Remove, @enum.Select(node => node?.GetValue<string>()));
+        Assert.Contains(ManageActions.Move, @enum.Select(node => node?.GetValue<string>()));
+    }
+
+    [Fact]
+    public void BuildMcpTools_GetComponentInfoSchema_RequiresGameObjectPathAndIndex()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var getComponentInfo = AssertToolExists(tools, ToolNames.GetComponentInfo);
+        var schema = Assert.IsType<JsonObject>(getComponentInfo["inputSchema"]);
+        var required = Assert.IsType<JsonArray>(schema["required"]);
+
+        var requiredNames = required.Select(n => n?.GetValue<string>()).ToList();
+        Assert.Contains("game_object_path", requiredNames);
+        Assert.Contains("index", requiredNames);
+    }
+
+    [Fact]
+    public void BuildUnityCapabilityTools_GetSceneHierarchy_IsRetryable()
+    {
+        var tools = ToolCatalog.BuildUnityCapabilityTools();
+        var tool = AssertToolExists(tools, ToolNames.GetSceneHierarchy);
+        Assert.True(tool["execution_error_retryable"]?.GetValue<bool>());
+    }
+
+    [Fact]
+    public void BuildUnityCapabilityTools_ManageComponent_IsNotRetryable()
+    {
+        var tools = ToolCatalog.BuildUnityCapabilityTools();
+        var tool = AssertToolExists(tools, ToolNames.ManageComponent);
+        Assert.False(tool["execution_error_retryable"]?.GetValue<bool>());
+    }
+
     private static void AssertSyncToolWithoutCancel(JsonArray tools, string toolName)
     {
         var tool = AssertToolExists(tools, toolName);

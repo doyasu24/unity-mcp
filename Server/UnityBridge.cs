@@ -230,10 +230,112 @@ internal sealed class UnityBridge
             return JsonHelpers.CloneNode(response["result"]) ?? new JsonObject();
         }
 
+        var errorDetails = JsonHelpers.AsObjectOrEmpty(JsonHelpers.CloneNode(response));
+        var pluginErrorCode = JsonHelpers.GetString(errorDetails, "error_code");
+        var pluginMessage = JsonHelpers.GetString(errorDetails, "message");
+        var wrappedDetails = new JsonObject();
+        if (!string.IsNullOrWhiteSpace(pluginErrorCode))
+        {
+            wrappedDetails["plugin_error_code"] = pluginErrorCode;
+        }
+
+        if (!string.IsNullOrWhiteSpace(pluginMessage))
+        {
+            wrappedDetails["message"] = pluginMessage;
+        }
+
         throw new McpException(
             ErrorCodes.UnityExecution,
-            "Unity returned execution error",
-            JsonHelpers.CloneNode(response));
+            pluginMessage ?? "Unity returned execution error",
+            wrappedDetails);
+    }
+
+    public Task<GetSceneHierarchyResult> GetSceneHierarchyAsync(GetSceneHierarchyRequest request, CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            PruneJobs();
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetSceneHierarchy);
+            var parameters = new JsonObject
+            {
+                ["max_depth"] = request.MaxDepth,
+                ["max_game_objects"] = request.MaxGameObjects,
+            };
+            if (!string.IsNullOrWhiteSpace(request.RootPath))
+            {
+                parameters["root_path"] = request.RootPath;
+            }
+
+            var payload = await ExecuteSyncToolAsync(ToolNames.GetSceneHierarchy, parameters, timeoutMs, token);
+            return new GetSceneHierarchyResult(payload);
+        }, cancellationToken);
+    }
+
+    public Task<GetComponentInfoResult> GetComponentInfoAsync(GetComponentInfoRequest request, CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            PruneJobs();
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetComponentInfo);
+            var parameters = new JsonObject
+            {
+                ["game_object_path"] = request.GameObjectPath,
+                ["index"] = request.Index,
+                ["max_array_elements"] = request.MaxArrayElements,
+            };
+            if (request.Fields is not null)
+            {
+                var fieldsArray = new JsonArray();
+                foreach (var f in request.Fields)
+                {
+                    fieldsArray.Add(f);
+                }
+
+                parameters["fields"] = fieldsArray;
+            }
+
+            var payload = await ExecuteSyncToolAsync(ToolNames.GetComponentInfo, parameters, timeoutMs, token);
+            return new GetComponentInfoResult(payload);
+        }, cancellationToken);
+    }
+
+    public Task<ManageComponentResult> ManageComponentAsync(ManageComponentRequest request, CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            PruneJobs();
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageComponent);
+            var parameters = new JsonObject
+            {
+                ["action"] = request.Action,
+                ["game_object_path"] = request.GameObjectPath,
+            };
+            if (!string.IsNullOrWhiteSpace(request.ComponentType))
+            {
+                parameters["component_type"] = request.ComponentType;
+            }
+
+            if (request.Index.HasValue)
+            {
+                parameters["index"] = request.Index.Value;
+            }
+
+            if (request.NewIndex.HasValue)
+            {
+                parameters["new_index"] = request.NewIndex.Value;
+            }
+
+            if (request.Fields is not null)
+            {
+                parameters["fields"] = request.Fields.DeepClone();
+            }
+
+            var payload = await ExecuteSyncToolAsync(ToolNames.ManageComponent, parameters, timeoutMs, token);
+            return new ManageComponentResult(payload);
+        }, cancellationToken);
     }
 
     public Task<RunTestsResult> RunTestsAsync(RunTestsRequest request, CancellationToken cancellationToken)

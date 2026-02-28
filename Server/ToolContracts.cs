@@ -13,6 +13,9 @@ internal static class ToolNames
     public const string RunTests = "run_tests";
     public const string GetJobStatus = "get_job_status";
     public const string CancelJob = "cancel_job";
+    public const string GetSceneHierarchy = "get_scene_hierarchy";
+    public const string GetComponentInfo = "get_component_info";
+    public const string ManageComponent = "manage_component";
 }
 
 internal static class ToolLimits
@@ -20,6 +23,37 @@ internal static class ToolLimits
     public const int ReadConsoleDefaultMaxEntries = 200;
     public const int ReadConsoleMinEntries = 1;
     public const int ReadConsoleMaxEntries = 2000;
+}
+
+internal static class SceneToolLimits
+{
+    public const int MaxDepthMin = 0;
+    public const int MaxDepthMax = 50;
+    public const int MaxDepthDefault = 10;
+    public const int MaxGameObjectsMin = 1;
+    public const int MaxGameObjectsMax = 10000;
+    public const int MaxGameObjectsDefault = 1000;
+    public const int MaxArrayElementsMin = 0;
+    public const int MaxArrayElementsMax = 64;
+    public const int MaxArrayElementsDefault = 16;
+}
+
+internal static class ManageActions
+{
+    public const string Add = "add";
+    public const string Update = "update";
+    public const string Remove = "remove";
+    public const string Move = "move";
+
+    public static bool IsSupported(string? action)
+    {
+        return action is Add or Update or Remove or Move;
+    }
+
+    public static JsonArray ToJsonArray()
+    {
+        return new JsonArray(Add, Update, Remove, Move);
+    }
 }
 
 internal static class RunTestsModes
@@ -83,3 +117,15 @@ internal sealed record RunTestsResult(string JobId, string State);
 internal sealed record JobStatusResult(string JobId, string State, JsonNode? Progress, JsonNode Result);
 
 internal sealed record CancelJobResult(string JobId, string Status);
+
+internal sealed record GetSceneHierarchyRequest(string? RootPath, int MaxDepth, int MaxGameObjects);
+
+internal sealed record GetSceneHierarchyResult(JsonNode Payload);
+
+internal sealed record GetComponentInfoRequest(string GameObjectPath, int Index, string[]? Fields, int MaxArrayElements);
+
+internal sealed record GetComponentInfoResult(JsonNode Payload);
+
+internal sealed record ManageComponentRequest(string Action, string GameObjectPath, string? ComponentType, int? Index, int? NewIndex, JsonObject? Fields);
+
+internal sealed record ManageComponentResult(JsonNode Payload);

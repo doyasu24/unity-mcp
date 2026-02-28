@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
+using UnityMcpPlugin.Tools;
 
 namespace UnityMcpPlugin
 {
@@ -83,6 +84,21 @@ namespace UnityMcpPlugin
                 }
 
                 return await MainThreadDispatcher.InvokeAsync(() => ControlPlayMode(action!));
+            }
+
+            if (string.Equals(toolName, ToolNames.GetSceneHierarchy, StringComparison.Ordinal))
+            {
+                return await MainThreadDispatcher.InvokeAsync(() => SceneHierarchyTool.Execute(parameters));
+            }
+
+            if (string.Equals(toolName, ToolNames.GetComponentInfo, StringComparison.Ordinal))
+            {
+                return await MainThreadDispatcher.InvokeAsync(() => ComponentInfoTool.Execute(parameters));
+            }
+
+            if (string.Equals(toolName, ToolNames.ManageComponent, StringComparison.Ordinal))
+            {
+                return await MainThreadDispatcher.InvokeAsync(() => ManageComponentTool.Execute(parameters));
             }
 
             throw new PluginException("ERR_UNKNOWN_COMMAND", $"unsupported tool: {toolName}");

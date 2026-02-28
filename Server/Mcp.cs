@@ -49,6 +49,9 @@ internal sealed class McpToolService
             ToolNames.RunTests => await _unityBridge.RunTestsAsync(ParseRunTestsRequest(arguments), cancellationToken),
             ToolNames.GetJobStatus => await _unityBridge.GetJobStatusAsync(ParseJobStatusRequest(arguments), cancellationToken),
             ToolNames.CancelJob => await _unityBridge.CancelJobAsync(ParseCancelJobRequest(arguments), cancellationToken),
+            ToolNames.GetSceneHierarchy => (await _unityBridge.GetSceneHierarchyAsync(ParseGetSceneHierarchyRequest(arguments), cancellationToken)).Payload,
+            ToolNames.GetComponentInfo => (await _unityBridge.GetComponentInfoAsync(ParseGetComponentInfoRequest(arguments), cancellationToken)).Payload,
+            ToolNames.ManageComponent => (await _unityBridge.ManageComponentAsync(ParseManageComponentRequest(arguments), cancellationToken)).Payload,
             _ => throw new McpException(ErrorCodes.UnknownCommand, $"Unknown tool: {toolName}"),
         };
     }
@@ -128,6 +131,145 @@ internal sealed class McpToolService
         }
 
         return jobId;
+    }
+
+    private static GetSceneHierarchyRequest ParseGetSceneHierarchyRequest(JsonObject arguments)
+    {
+        var rootPath = JsonHelpers.GetString(arguments, "root_path");
+
+        var maxDepth = JsonHelpers.GetInt(arguments, "max_depth") ?? SceneToolLimits.MaxDepthDefault;
+        if (maxDepth is < SceneToolLimits.MaxDepthMin or > SceneToolLimits.MaxDepthMax)
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"max_depth must be between {SceneToolLimits.MaxDepthMin} and {SceneToolLimits.MaxDepthMax}",
+                new JsonObject { ["max_depth"] = maxDepth });
+        }
+
+        var maxGameObjects = JsonHelpers.GetInt(arguments, "max_game_objects") ?? SceneToolLimits.MaxGameObjectsDefault;
+        if (maxGameObjects is < SceneToolLimits.MaxGameObjectsMin or > SceneToolLimits.MaxGameObjectsMax)
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"max_game_objects must be between {SceneToolLimits.MaxGameObjectsMin} and {SceneToolLimits.MaxGameObjectsMax}",
+                new JsonObject { ["max_game_objects"] = maxGameObjects });
+        }
+
+        return new GetSceneHierarchyRequest(rootPath, maxDepth, maxGameObjects);
+    }
+
+    private static GetComponentInfoRequest ParseGetComponentInfoRequest(JsonObject arguments)
+    {
+        var gameObjectPath = JsonHelpers.GetString(arguments, "game_object_path");
+        if (string.IsNullOrWhiteSpace(gameObjectPath))
+        {
+            throw new McpException(ErrorCodes.InvalidParams, "game_object_path is required");
+        }
+
+        var index = JsonHelpers.GetInt(arguments, "index");
+        if (!index.HasValue)
+        {
+            throw new McpException(ErrorCodes.InvalidParams, "index is required");
+        }
+
+        if (index.Value < 0)
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                "index must be >= 0",
+                new JsonObject { ["index"] = index.Value });
+        }
+
+        string[]? fields = null;
+        if (arguments.TryGetPropertyValue("fields", out var fieldsNode) && fieldsNode is JsonArray fieldsArray)
+        {
+            fields = fieldsArray
+                .Select(n => n?.GetValue<string>())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToArray()!;
+        }
+
+        var maxArrayElements = JsonHelpers.GetInt(arguments, "max_array_elements") ?? SceneToolLimits.MaxArrayElementsDefault;
+        if (maxArrayElements is < SceneToolLimits.MaxArrayElementsMin or > SceneToolLimits.MaxArrayElementsMax)
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"max_array_elements must be between {SceneToolLimits.MaxArrayElementsMin} and {SceneToolLimits.MaxArrayElementsMax}",
+                new JsonObject { ["max_array_elements"] = maxArrayElements });
+        }
+
+        return new GetComponentInfoRequest(gameObjectPath, index.Value, fields, maxArrayElements);
+    }
+
+    private static ManageComponentRequest ParseManageComponentRequest(JsonObject arguments)
+    {
+        var action = JsonHelpers.GetString(arguments, "action");
+        if (!ManageActions.IsSupported(action))
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"action must be one of {ManageActions.Add}|{ManageActions.Update}|{ManageActions.Remove}|{ManageActions.Move}",
+                new JsonObject { ["action"] = action });
+        }
+
+        var gameObjectPath = JsonHelpers.GetString(arguments, "game_object_path");
+        if (string.IsNullOrWhiteSpace(gameObjectPath))
+        {
+            throw new McpException(ErrorCodes.InvalidParams, "game_object_path is required");
+        }
+
+        var componentType = JsonHelpers.GetString(arguments, "component_type");
+        var index = JsonHelpers.GetInt(arguments, "index");
+        var newIndex = JsonHelpers.GetInt(arguments, "new_index");
+        JsonObject? fields = null;
+        if (arguments.TryGetPropertyValue("fields", out var fieldsNode) && fieldsNode is JsonObject fieldsObj)
+        {
+            fields = fieldsObj;
+        }
+
+        switch (action)
+        {
+            case ManageActions.Add:
+                if (string.IsNullOrWhiteSpace(componentType))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "component_type is required for 'add' action");
+                }
+
+                break;
+            case ManageActions.Update:
+                if (!index.HasValue)
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "index is required for 'update' action");
+                }
+
+                if (fields is null)
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "fields is required for 'update' action");
+                }
+
+                break;
+            case ManageActions.Remove:
+                if (!index.HasValue)
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "index is required for 'remove' action");
+                }
+
+                break;
+            case ManageActions.Move:
+                if (!index.HasValue)
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "index is required for 'move' action");
+                }
+
+                if (!newIndex.HasValue)
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "new_index is required for 'move' action");
+                }
+
+                break;
+        }
+
+        return new ManageComponentRequest(action!, gameObjectPath, componentType, index, newIndex, fields);
     }
 }
 
