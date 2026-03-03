@@ -38,6 +38,7 @@ internal static class ToolNames
     public const string GetAssetInfo = "get_asset_info";
     public const string ManageAsset = "manage_asset";
     public const string CaptureScreenshot = "capture_screenshot";
+    public const string ExecuteBatch = "execute_batch";
 }
 
 internal static class ToolLimits
@@ -400,3 +401,25 @@ internal static class KeywordsActions
 internal sealed record CaptureScreenshotRequest(string Source, int Width, int Height, string? CameraPath, string? OutputPath);
 
 internal sealed record CaptureScreenshotResult(JsonNode Payload);
+
+internal static class ExecuteBatchLimits
+{
+    public const int MaxOperations = 50;
+}
+
+internal static class BatchBlockedTools
+{
+    public static bool IsBlocked(string toolName)
+    {
+        return toolName is ToolNames.ExecuteBatch
+            or ToolNames.GetEditorState
+            or ToolNames.RunTests
+            or ToolNames.RefreshAssets;
+    }
+}
+
+internal sealed record BatchOperation(string ToolName, JsonObject Arguments);
+
+internal sealed record ExecuteBatchRequest(BatchOperation[] Operations, bool StopOnError, bool Atomic);
+
+internal sealed record ExecuteBatchResult(JsonNode Payload);

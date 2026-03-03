@@ -101,6 +101,7 @@ internal sealed class McpToolService
             ToolNames.GetAssetInfo => (await _unityBridge.GetAssetInfoAsync(ParseGetAssetInfoRequest(arguments), cancellationToken)).Payload,
             ToolNames.ManageAsset => (await _unityBridge.ManageAssetAsync(ParseManageAssetRequest(arguments), cancellationToken)).Payload,
             ToolNames.CaptureScreenshot => (await _unityBridge.CaptureScreenshotAsync(ParseCaptureScreenshotRequest(arguments), cancellationToken)).Payload,
+            ToolNames.ExecuteBatch => (await _unityBridge.ExecuteBatchAsync(ParseExecuteBatchRequest(arguments), cancellationToken)).Payload,
             _ => throw new McpException(ErrorCodes.UnknownCommand, $"Unknown tool: {toolName}"),
         };
     }
@@ -1090,6 +1091,88 @@ internal sealed class McpToolService
         var outputPath = JsonHelpers.GetString(arguments, "output_path");
 
         return new CaptureScreenshotRequest(source, width, height, cameraPath, outputPath);
+    }
+
+    private static ExecuteBatchRequest ParseExecuteBatchRequest(JsonObject arguments)
+    {
+        if (!arguments.TryGetPropertyValue("operations", out var opsNode) || opsNode is not JsonArray opsArray || opsArray.Count == 0)
+        {
+            throw new McpException(ErrorCodes.InvalidParams, "operations is required and must be a non-empty array");
+        }
+
+        if (opsArray.Count > ExecuteBatchLimits.MaxOperations)
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"operations must have at most {ExecuteBatchLimits.MaxOperations} items",
+                new JsonObject { ["count"] = opsArray.Count });
+        }
+
+        var operations = new BatchOperation[opsArray.Count];
+        for (var i = 0; i < opsArray.Count; i++)
+        {
+            if (opsArray[i] is not JsonObject opObj)
+            {
+                throw new McpException(ErrorCodes.InvalidParams, $"operations[{i}] must be an object");
+            }
+
+            var toolName = JsonHelpers.GetString(opObj, "tool_name");
+            if (string.IsNullOrWhiteSpace(toolName))
+            {
+                throw new McpException(ErrorCodes.InvalidParams, $"operations[{i}].tool_name is required");
+            }
+
+            if (BatchBlockedTools.IsBlocked(toolName))
+            {
+                throw new McpException(
+                    ErrorCodes.InvalidParams,
+                    $"operations[{i}].tool_name '{toolName}' is not allowed in a batch");
+            }
+
+            if (!ToolCatalog.Items.ContainsKey(toolName))
+            {
+                throw new McpException(
+                    ErrorCodes.InvalidParams,
+                    $"operations[{i}].tool_name '{toolName}' is not a known tool");
+            }
+
+            var args = opObj["arguments"] as JsonObject ?? new JsonObject();
+            // Clone to avoid mutating the original
+            args = args.DeepClone().AsObject();
+
+            var wireToolName = ResolveWireToolName(toolName, args);
+            args = RemapBatchArguments(wireToolName, args);
+
+            operations[i] = new BatchOperation(wireToolName, args);
+        }
+
+        var stopOnError = JsonHelpers.GetBool(arguments, "stop_on_error") ?? true;
+        var atomic = JsonHelpers.GetBool(arguments, "atomic") ?? false;
+
+        return new ExecuteBatchRequest(operations, stopOnError, atomic);
+    }
+
+    private static string ResolveWireToolName(string mcpToolName, JsonObject arguments)
+    {
+        var hasPrefab = HasPrefabPath(arguments);
+        return mcpToolName switch
+        {
+            ToolNames.GetHierarchy => hasPrefab ? ToolNames.GetPrefabHierarchy : ToolNames.GetSceneHierarchy,
+            ToolNames.GetComponentInfo => hasPrefab ? ToolNames.GetPrefabComponentInfo : ToolNames.GetSceneComponentInfo,
+            ToolNames.ManageComponent => hasPrefab ? ToolNames.ManagePrefabComponent : ToolNames.ManageSceneComponent,
+            ToolNames.FindGameObjects => hasPrefab ? ToolNames.FindPrefabGameObjects : ToolNames.FindSceneGameObjects,
+            ToolNames.ManageGameObject => hasPrefab ? ToolNames.ManagePrefabGameObject : ToolNames.ManageSceneGameObject,
+            _ => mcpToolName,
+        };
+    }
+
+    private static JsonObject RemapBatchArguments(string wireToolName, JsonObject arguments)
+    {
+        if (wireToolName != ToolNames.GetPrefabHierarchy) return arguments;
+        if (!arguments.ContainsKey("root_path") || arguments.ContainsKey("game_object_path")) return arguments;
+        arguments["game_object_path"] = arguments["root_path"]?.DeepClone();
+        arguments.Remove("root_path");
+        return arguments;
     }
 }
 

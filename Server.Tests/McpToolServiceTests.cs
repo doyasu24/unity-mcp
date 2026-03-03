@@ -589,6 +589,127 @@ public sealed class McpToolServiceTests
         Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
     }
 
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForExecuteBatch_MissingOperations()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject();
+        var result = await service.CallToolAsync(ToolNames.ExecuteBatch, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForExecuteBatch_EmptyOperations()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject { ["operations"] = new JsonArray() };
+        var result = await service.CallToolAsync(ToolNames.ExecuteBatch, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForExecuteBatch_TooManyOperations()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var ops = new JsonArray();
+        for (var i = 0; i < 51; i++)
+        {
+            ops.Add(new JsonObject { ["tool_name"] = "clear_console" });
+        }
+
+        var args = new JsonObject { ["operations"] = ops };
+        var result = await service.CallToolAsync(ToolNames.ExecuteBatch, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForExecuteBatch_MissingToolName()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["operations"] = new JsonArray
+            {
+                new JsonObject { ["arguments"] = new JsonObject() },
+            },
+        };
+        var result = await service.CallToolAsync(ToolNames.ExecuteBatch, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForExecuteBatch_NestedBatch()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["operations"] = new JsonArray
+            {
+                new JsonObject { ["tool_name"] = "execute_batch" },
+            },
+        };
+        var result = await service.CallToolAsync(ToolNames.ExecuteBatch, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForExecuteBatch_BlockedTool()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["operations"] = new JsonArray
+            {
+                new JsonObject { ["tool_name"] = "run_tests" },
+            },
+        };
+        var result = await service.CallToolAsync(ToolNames.ExecuteBatch, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForExecuteBatch_UnknownTool()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["operations"] = new JsonArray
+            {
+                new JsonObject { ["tool_name"] = "nonexistent_tool" },
+            },
+        };
+        var result = await service.CallToolAsync(ToolNames.ExecuteBatch, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
     private static McpToolService CreateService(RuntimeState runtimeState)
     {
         var scheduler = new RequestScheduler(Constants.QueueMaxSize);

@@ -753,6 +753,54 @@ internal static class ToolCatalog
                 },
                 ["additionalProperties"] = false,
             }),
+        [ToolNames.ExecuteBatch] = new(
+            ToolNames.ExecuteBatch,
+            120000,
+            600000,
+            false,
+            "Executes multiple tool calls in a single request. Reduces round-trips for batch operations. Supports atomic mode with Unity Undo (best-effort).",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["operations"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["tool_name"] = new JsonObject
+                                {
+                                    ["type"] = "string",
+                                },
+                                ["arguments"] = new JsonObject
+                                {
+                                    ["type"] = "object",
+                                },
+                            },
+                            ["required"] = new JsonArray("tool_name"),
+                            ["additionalProperties"] = false,
+                        },
+                        ["minItems"] = 1,
+                        ["maxItems"] = ExecuteBatchLimits.MaxOperations,
+                    },
+                    ["stop_on_error"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["default"] = true,
+                    },
+                    ["atomic"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["default"] = false,
+                    },
+                },
+                ["required"] = new JsonArray("operations"),
+                ["additionalProperties"] = false,
+            }),
     };
 
     public static JsonArray BuildMcpTools()

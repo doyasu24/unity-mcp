@@ -30,6 +30,7 @@ namespace UnityMcpPlugin
         internal const string FindPrefabGameObjects = "find_prefab_game_objects";
         internal const string ManageAsset = "manage_asset";
         internal const string CaptureScreenshot = "capture_screenshot";
+        internal const string ExecuteBatch = "execute_batch";
     }
 
     internal static class ToolLimits

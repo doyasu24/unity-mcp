@@ -380,6 +380,38 @@ public sealed class ToolCatalogTests
         Assert.StartsWith("Controls Unity", description);
     }
 
+    [Fact]
+    public void BuildMcpTools_ContainsExecuteBatch()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        AssertToolExists(tools, ToolNames.ExecuteBatch);
+    }
+
+    [Fact]
+    public void BuildMcpTools_ExecuteBatchSchema_RequiresOperations()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.ExecuteBatch);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var required = Assert.IsType<JsonArray>(schema["required"]);
+
+        var requiredNames = required.Select(n => n?.GetValue<string>()).ToList();
+        Assert.Contains("operations", requiredNames);
+    }
+
+    [Fact]
+    public void DefaultTimeoutMs_ExecuteBatch_Returns120000()
+    {
+        Assert.Equal(120000, ToolCatalog.DefaultTimeoutMs(ToolNames.ExecuteBatch));
+    }
+
+    [Fact]
+    public void MaxTimeoutMs_ExecuteBatch_Returns600000()
+    {
+        Assert.True(ToolCatalog.Items.TryGetValue(ToolNames.ExecuteBatch, out var metadata));
+        Assert.Equal(600000, metadata.MaxTimeoutMs);
+    }
+
     private static void AssertSyncToolWithoutCancel(JsonArray tools, string toolName)
     {
         var tool = AssertToolExists(tools, toolName);

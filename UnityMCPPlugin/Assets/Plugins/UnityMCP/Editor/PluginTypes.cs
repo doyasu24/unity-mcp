@@ -265,6 +265,25 @@ namespace UnityMcpPlugin
         [property: JsonProperty("camera_name")] string CameraName,
         [property: JsonProperty("source")] string Source);
 
+    internal sealed record BatchOperationResult(
+        [property: JsonProperty("tool_name")] string ToolName,
+        [property: JsonProperty("success")] bool Success,
+        [property: JsonProperty("result", NullValueHandling = NullValueHandling.Ignore)] object Result,
+        [property: JsonProperty("error", NullValueHandling = NullValueHandling.Ignore)] string Error);
+
+    internal sealed record BatchSummary(
+        [property: JsonProperty("total")] int Total,
+        [property: JsonProperty("succeeded")] int Succeeded,
+        [property: JsonProperty("failed")] int Failed,
+        [property: JsonProperty("skipped")] int Skipped);
+
+    internal sealed record ExecuteBatchPayload(
+        [property: JsonProperty("success")] bool Success,
+        [property: JsonProperty("results")] IReadOnlyList<BatchOperationResult> Results,
+        [property: JsonProperty("summary")] BatchSummary Summary,
+        [property: JsonProperty("atomic")] bool Atomic,
+        [property: JsonProperty("rolled_back")] bool RolledBack);
+
     internal sealed record RunTestsJobResult(
         [property: JsonProperty("summary")] TestSummary Summary,
         [property: JsonProperty("failed_tests")] IReadOnlyList<FailedTest> FailedTests,
