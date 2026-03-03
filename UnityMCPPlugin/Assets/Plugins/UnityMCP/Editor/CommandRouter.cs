@@ -1,0 +1,286 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
+
+namespace UnityMcpPlugin
+{
+    internal sealed class CommandRouter
+    {
+        private readonly CommandExecutor _commandExecutor;
+        private readonly JobExecutor _jobExecutor;
+        private readonly Func<object, CancellationToken, Task> _sendMessageAsync;
+        private readonly Func<string, string, string, CancellationToken, Task> _sendProtocolErrorAsync;
+
+        internal CommandRouter(
+            CommandExecutor commandExecutor,
+            JobExecutor jobExecutor,
+            Func<object, CancellationToken, Task> sendMessageAsync,
+            Func<string, string, string, CancellationToken, Task> sendProtocolErrorAsync)
+        {
+            _commandExecutor = commandExecutor;
+            _jobExecutor = jobExecutor;
+            _sendMessageAsync = sendMessageAsync;
+            _sendProtocolErrorAsync = sendProtocolErrorAsync;
+        }
+
+        internal async Task RouteAsync(string type, JObject message, CancellationToken cancellationToken)
+        {
+            switch (type)
+            {
+                case "hello":
+                    HandleServerHello(message);
+                    return;
+                case "capability":
+                    HandleServerCapability(message);
+                    return;
+                case "execute":
+                    await HandleExecuteAsync(message, cancellationToken);
+                    return;
+                case "submit_job":
+                    await HandleSubmitJobAsync(message, cancellationToken);
+                    return;
+                case ToolNames.GetJobStatus:
+                    await HandleGetJobStatusAsync(message, cancellationToken);
+                    return;
+                case ToolNames.WaitJob:
+                    await HandleWaitJobAsync(message, cancellationToken);
+                    return;
+                case ToolNames.Cancel:
+                    await HandleCancelAsync(message, cancellationToken);
+                    return;
+                case "error":
+                    PluginLogger.DevWarn("Received error from server", ("payload", Payload.ToJson(message)));
+                    return;
+                default:
+                    var requestId = Payload.GetString(message, "request_id");
+                    await _sendProtocolErrorAsync(requestId, "ERR_UNKNOWN_COMMAND", $"unknown command type: {type}", cancellationToken);
+                    return;
+            }
+        }
+
+        private static void HandleServerHello(JObject message)
+        {
+            var serverVersion = Payload.GetString(message, "server_version") ?? "unknown";
+            PluginLogger.DevInfo("Received server hello", ("server_version", serverVersion));
+        }
+
+        private static void HandleServerCapability(JObject message)
+        {
+            if (!Payload.TryGetArrayLength(message, "tools", out var count))
+            {
+                PluginLogger.DevInfo("Received capability without tools");
+                return;
+            }
+
+            PluginLogger.DevInfo("Received capability", ("tool_count", count));
+        }
+
+        private async Task HandleExecuteAsync(JObject message, CancellationToken cancellationToken)
+        {
+            var requestId = Payload.GetString(message, "request_id");
+            var toolName = Payload.GetString(message, "tool_name");
+            var parameters = Payload.GetObjectOrEmpty(message, "params");
+
+            if (string.IsNullOrEmpty(requestId) || string.IsNullOrEmpty(toolName))
+            {
+                await _sendProtocolErrorAsync(requestId, "ERR_INVALID_REQUEST", "request_id and tool_name are required", cancellationToken);
+                return;
+            }
+
+            try
+            {
+                var result = await _commandExecutor.ExecuteToolAsync(toolName, parameters);
+                await _sendMessageAsync(new
+                {
+                    type = "result",
+                    request_id = requestId,
+                    status = "ok",
+                    result,
+                }, cancellationToken);
+            }
+            catch (PluginException ex)
+            {
+                await _sendMessageAsync(new
+                {
+                    type = "result",
+                    request_id = requestId,
+                    status = "error",
+                    result = new
+                    {
+                        code = ex.Code,
+                        message = ex.Message,
+                    },
+                }, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                await _sendMessageAsync(new
+                {
+                    type = "result",
+                    request_id = requestId,
+                    status = "error",
+                    result = new
+                    {
+                        code = "ERR_UNITY_EXECUTION",
+                        message = ex.Message,
+                    },
+                }, cancellationToken);
+            }
+        }
+
+        private async Task HandleSubmitJobAsync(JObject message, CancellationToken cancellationToken)
+        {
+            var requestId = Payload.GetString(message, "request_id");
+            var toolName = Payload.GetString(message, "tool_name");
+            var parameters = Payload.GetObjectOrEmpty(message, "params");
+
+            if (string.IsNullOrEmpty(requestId) || string.IsNullOrEmpty(toolName))
+            {
+                await _sendProtocolErrorAsync(requestId, "ERR_INVALID_REQUEST", "request_id and tool_name are required", cancellationToken);
+                return;
+            }
+
+            if (!string.Equals(toolName, ToolNames.RunTests, StringComparison.Ordinal))
+            {
+                await _sendProtocolErrorAsync(requestId, "ERR_UNKNOWN_COMMAND", $"unsupported job tool: {toolName}", cancellationToken);
+                return;
+            }
+
+            var mode = Payload.GetString(parameters, "mode") ?? RunTestsModes.All;
+            if (!RunTestsModes.IsSupported(mode))
+            {
+                await _sendProtocolErrorAsync(
+                    requestId,
+                    "ERR_INVALID_PARAMS",
+                    $"mode must be {RunTestsModes.All}|{RunTestsModes.Edit}|{RunTestsModes.Play}",
+                    cancellationToken);
+                return;
+            }
+
+            try
+            {
+                var waitMs = Payload.GetInt(message, "wait_ms") ?? 0;
+                var timeoutMs = Payload.GetInt(message, "timeout_ms") ?? 0;
+                var filter = Payload.GetString(parameters, "filter") ?? string.Empty;
+                var jobId = _jobExecutor.SubmitRunTestsJob(mode, filter, timeoutMs);
+
+                string state;
+                RunTestsJobResult result;
+                if (waitMs > 0)
+                {
+                    var (_, waitedState, waitedResult) = await _jobExecutor.TryWaitForTerminalAsync(jobId, waitMs, cancellationToken);
+                    state = waitedState;
+                    result = waitedResult;
+                }
+                else
+                {
+                    _jobExecutor.TryGetJobStatus(jobId, out state, out result);
+                }
+
+                await _sendMessageAsync(new
+                {
+                    type = "submit_job_result",
+                    request_id = requestId,
+                    status = "accepted",
+                    job_id = jobId,
+                    state,
+                    result,
+                }, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                await _sendProtocolErrorAsync(requestId, "ERR_UNITY_EXECUTION", ex.Message, cancellationToken);
+            }
+        }
+
+        private async Task HandleGetJobStatusAsync(JObject message, CancellationToken cancellationToken)
+        {
+            var requestId = Payload.GetString(message, "request_id");
+            var jobId = Payload.GetString(message, "job_id");
+
+            if (string.IsNullOrEmpty(requestId) || string.IsNullOrEmpty(jobId))
+            {
+                await _sendProtocolErrorAsync(requestId, "ERR_INVALID_PARAMS", "request_id and job_id are required", cancellationToken);
+                return;
+            }
+
+            if (!_jobExecutor.TryGetJobStatus(jobId, out var state, out var result))
+            {
+                await _sendProtocolErrorAsync(requestId, "ERR_JOB_NOT_FOUND", $"unknown job_id: {jobId}", cancellationToken);
+                return;
+            }
+
+            await _sendMessageAsync(new
+            {
+                type = "job_status",
+                request_id = requestId,
+                job_id = jobId,
+                state,
+                progress = (object)null,
+                result,
+            }, cancellationToken);
+        }
+
+        private async Task HandleWaitJobAsync(JObject message, CancellationToken cancellationToken)
+        {
+            var requestId = Payload.GetString(message, "request_id");
+            var jobId = Payload.GetString(message, "job_id");
+            var waitMs = Payload.GetInt(message, "wait_ms") ?? 0;
+
+            if (string.IsNullOrEmpty(requestId) || string.IsNullOrEmpty(jobId))
+            {
+                await _sendProtocolErrorAsync(requestId, "ERR_INVALID_PARAMS", "request_id and job_id are required", cancellationToken);
+                return;
+            }
+
+            var (found, state, result) = await _jobExecutor.TryWaitForTerminalAsync(jobId, waitMs, cancellationToken);
+            if (!found)
+            {
+                await _sendProtocolErrorAsync(requestId, "ERR_JOB_NOT_FOUND", $"unknown job_id: {jobId}", cancellationToken);
+                return;
+            }
+
+            await _sendMessageAsync(new
+            {
+                type = "job_status",
+                request_id = requestId,
+                job_id = jobId,
+                state,
+                progress = (object)null,
+                result,
+            }, cancellationToken);
+        }
+
+        private async Task HandleCancelAsync(JObject message, CancellationToken cancellationToken)
+        {
+            var requestId = Payload.GetString(message, "request_id");
+            var targetJobId = Payload.GetString(message, "target_job_id");
+
+            if (string.IsNullOrEmpty(requestId))
+            {
+                await _sendProtocolErrorAsync(requestId, "ERR_INVALID_REQUEST", "request_id is required", cancellationToken);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(targetJobId))
+            {
+                await _sendProtocolErrorAsync(requestId, "ERR_CANCEL_NOT_SUPPORTED", "cancel target is not supported", cancellationToken);
+                return;
+            }
+
+            if (!_jobExecutor.TryCancel(targetJobId, out var status))
+            {
+                await _sendProtocolErrorAsync(requestId, "ERR_JOB_NOT_FOUND", $"unknown job_id: {targetJobId}", cancellationToken);
+                return;
+            }
+
+            await _sendMessageAsync(new
+            {
+                type = "cancel_result",
+                request_id = requestId,
+                status,
+            }, cancellationToken);
+        }
+    }
+}

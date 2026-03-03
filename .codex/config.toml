@@ -1,0 +1,5 @@
+[features]
+rmcp_client = true
+
+[mcp_servers.unity-mcp]
+url = "http://127.0.0.1:48091/mcp"
