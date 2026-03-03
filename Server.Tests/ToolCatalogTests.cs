@@ -117,22 +117,6 @@ public sealed class ToolCatalogTests
     }
 
     [Fact]
-    public void BuildUnityCapabilityTools_GetSceneHierarchy_IsRetryable()
-    {
-        var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.GetSceneHierarchy);
-        Assert.True(tool["execution_error_retryable"]?.GetValue<bool>());
-    }
-
-    [Fact]
-    public void BuildUnityCapabilityTools_ManageComponent_IsNotRetryable()
-    {
-        var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.ManageSceneComponent);
-        Assert.False(tool["execution_error_retryable"]?.GetValue<bool>());
-    }
-
-    [Fact]
     public void BuildMcpTools_UnifiedToolsHaveOptionalPrefabPath()
     {
         var tools = ToolCatalog.BuildMcpTools();
@@ -150,22 +134,6 @@ public sealed class ToolCatalogTests
                 Assert.DoesNotContain("prefab_path", required.Select(n => n?.GetValue<string>()));
             }
         }
-    }
-
-    [Fact]
-    public void BuildUnityCapabilityTools_GetPrefabHierarchy_IsRetryable()
-    {
-        var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.GetPrefabHierarchy);
-        Assert.True(tool["execution_error_retryable"]?.GetValue<bool>());
-    }
-
-    [Fact]
-    public void BuildUnityCapabilityTools_ManagePrefabComponent_IsNotRetryable()
-    {
-        var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.ManagePrefabComponent);
-        Assert.False(tool["execution_error_retryable"]?.GetValue<bool>());
     }
 
     [Fact]
@@ -327,38 +295,6 @@ public sealed class ToolCatalogTests
     }
 
     [Fact]
-    public void BuildUnityCapabilityTools_ListScenes_IsRetryable()
-    {
-        var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.ListScenes);
-        Assert.True(tool["execution_error_retryable"]?.GetValue<bool>());
-    }
-
-    [Fact]
-    public void BuildUnityCapabilityTools_FindAssets_IsRetryable()
-    {
-        var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.FindAssets);
-        Assert.True(tool["execution_error_retryable"]?.GetValue<bool>());
-    }
-
-    [Fact]
-    public void BuildUnityCapabilityTools_FindSceneGameObjects_IsRetryable()
-    {
-        var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.FindSceneGameObjects);
-        Assert.True(tool["execution_error_retryable"]?.GetValue<bool>());
-    }
-
-    [Fact]
-    public void BuildUnityCapabilityTools_OpenScene_IsNotRetryable()
-    {
-        var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.OpenScene);
-        Assert.False(tool["execution_error_retryable"]?.GetValue<bool>());
-    }
-
-    [Fact]
     public void BuildMcpTools_ContainsInstantiatePrefab()
     {
         var tools = ToolCatalog.BuildMcpTools();
@@ -370,14 +306,6 @@ public sealed class ToolCatalogTests
     }
 
     [Fact]
-    public void BuildUnityCapabilityTools_InstantiatePrefab_IsNotRetryable()
-    {
-        var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.InstantiatePrefab);
-        Assert.False(tool["execution_error_retryable"]?.GetValue<bool>());
-    }
-
-    [Fact]
     public void BuildMcpTools_ContainsGetAssetInfo()
     {
         var tools = ToolCatalog.BuildMcpTools();
@@ -386,22 +314,6 @@ public sealed class ToolCatalogTests
         var required = Assert.IsType<JsonArray>(schema["required"]);
         var requiredNames = required.Select(n => n?.GetValue<string>()).ToList();
         Assert.Contains("asset_path", requiredNames);
-    }
-
-    [Fact]
-    public void BuildUnityCapabilityTools_GetAssetInfo_IsRetryable()
-    {
-        var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.GetAssetInfo);
-        Assert.True(tool["execution_error_retryable"]?.GetValue<bool>());
-    }
-
-    [Fact]
-    public void BuildUnityCapabilityTools_FindPrefabGameObjects_IsRetryable()
-    {
-        var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.FindPrefabGameObjects);
-        Assert.True(tool["execution_error_retryable"]?.GetValue<bool>());
     }
 
     [Fact]
@@ -444,22 +356,6 @@ public sealed class ToolCatalogTests
 
         Assert.Contains(ScreenshotSources.GameView, @enum.Select(node => node?.GetValue<string>()));
         Assert.Contains(ScreenshotSources.SceneView, @enum.Select(node => node?.GetValue<string>()));
-    }
-
-    [Fact]
-    public void BuildUnityCapabilityTools_ManageAsset_IsNotRetryable()
-    {
-        var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.ManageAsset);
-        Assert.False(tool["execution_error_retryable"]?.GetValue<bool>());
-    }
-
-    [Fact]
-    public void BuildUnityCapabilityTools_CaptureScreenshot_IsRetryable()
-    {
-        var tools = ToolCatalog.BuildUnityCapabilityTools();
-        var tool = AssertToolExists(tools, ToolNames.CaptureScreenshot);
-        Assert.True(tool["execution_error_retryable"]?.GetValue<bool>());
     }
 
     [Fact]

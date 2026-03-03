@@ -7,7 +7,6 @@ internal sealed record ToolMetadata(
     int DefaultTimeoutMs,
     int MaxTimeoutMs,
     bool RequiresClientRequestId,
-    bool ExecutionErrorRetryable,
     string Description,
     JsonObject InputSchema);
 
@@ -20,7 +19,6 @@ internal static class ToolCatalog
             5000,
             10000,
             false,
-            true,
             "Returns current server/editor connection state.",
             EmptyObjectSchema()),
         [ToolNames.GetPlayModeState] = new(
@@ -28,7 +26,6 @@ internal static class ToolCatalog
             5000,
             10000,
             false,
-            true,
             "Gets current Unity Editor play mode state.",
             EmptyObjectSchema()),
         [ToolNames.ReadConsole] = new(
@@ -36,7 +33,6 @@ internal static class ToolCatalog
             10000,
             30000,
             false,
-            true,
             "Reads Unity console entries.",
             new JsonObject
             {
@@ -94,7 +90,6 @@ internal static class ToolCatalog
             5000,
             10000,
             false,
-            false,
             "Clears Unity Console log entries.",
             EmptyObjectSchema()),
         [ToolNames.RefreshAssets] = new(
@@ -102,14 +97,12 @@ internal static class ToolCatalog
             30000,
             120000,
             false,
-            false,
             "Refreshes Unity Editor assets.",
             EmptyObjectSchema()),
         [ToolNames.ControlPlayMode] = new(
             ToolNames.ControlPlayMode,
             10000,
             30000,
-            false,
             false,
             "Controls Unity Editor play mode (start, stop, pause).",
             new JsonObject
@@ -130,7 +123,6 @@ internal static class ToolCatalog
             ToolNames.RunTests,
             300000,
             1800000,
-            false,
             false,
             "Runs Unity tests and returns the result.",
             new JsonObject
@@ -156,7 +148,6 @@ internal static class ToolCatalog
             10000,
             30000,
             false,
-            true,
             "Returns the scene's or a Prefab asset's GameObject tree with component type names.",
             new JsonObject
             {
@@ -206,7 +197,6 @@ internal static class ToolCatalog
             10000,
             30000,
             false,
-            true,
             "Returns serialized field values of a specific component on a scene or Prefab GameObject.",
             new JsonObject
             {
@@ -247,7 +237,6 @@ internal static class ToolCatalog
             ToolNames.ManageComponent,
             10000,
             30000,
-            false,
             false,
             "Adds, updates, removes, or reorders components on a scene or Prefab GameObject.",
             new JsonObject
@@ -299,7 +288,6 @@ internal static class ToolCatalog
             5000,
             10000,
             false,
-            true,
             "Lists scene files in the Unity project.",
             new JsonObject
             {
@@ -334,7 +322,6 @@ internal static class ToolCatalog
             30000,
             60000,
             false,
-            false,
             "Opens a scene in the Unity Editor.",
             new JsonObject
             {
@@ -362,7 +349,6 @@ internal static class ToolCatalog
             30000,
             60000,
             false,
-            false,
             "Saves the current scene or a specific open scene.",
             new JsonObject
             {
@@ -381,7 +367,6 @@ internal static class ToolCatalog
             ToolNames.CreateScene,
             30000,
             60000,
-            false,
             false,
             "Creates a new scene and saves it to the specified path.",
             new JsonObject
@@ -410,7 +395,6 @@ internal static class ToolCatalog
             10000,
             30000,
             false,
-            true,
             "Searches for assets in the project using AssetDatabase filter syntax.",
             new JsonObject
             {
@@ -452,7 +436,6 @@ internal static class ToolCatalog
             10000,
             30000,
             false,
-            true,
             "Searches for GameObjects in the active scene or a Prefab asset by name, tag, or component type.",
             new JsonObject
             {
@@ -515,7 +498,6 @@ internal static class ToolCatalog
             10000,
             30000,
             false,
-            false,
             "Instantiates a Prefab asset into the active scene, maintaining the Prefab link.",
             new JsonObject
             {
@@ -576,7 +558,6 @@ internal static class ToolCatalog
             10000,
             30000,
             false,
-            true,
             "Returns detailed metadata for a Unity asset at the specified path.",
             new JsonObject
             {
@@ -596,7 +577,6 @@ internal static class ToolCatalog
             ToolNames.ManageGameObject,
             10000,
             30000,
-            false,
             false,
             "Creates, updates, deletes, or reparents GameObjects in the active scene or a Prefab asset.",
             new JsonObject
@@ -670,7 +650,6 @@ internal static class ToolCatalog
             15000,
             30000,
             false,
-            false,
             "Creates or deletes Unity assets (materials, folders, physic materials, animator controllers, render textures). Also manages material properties: get/set shader properties, change shaders, and control shader keywords.",
             new JsonObject
             {
@@ -732,7 +711,6 @@ internal static class ToolCatalog
             15000,
             60000,
             false,
-            true,
             "Captures a screenshot from Game View or Scene View and saves it as a PNG file.",
             new JsonObject
             {
@@ -866,7 +844,6 @@ internal static class ToolCatalog
             ["default_timeout_ms"] = tool.DefaultTimeoutMs,
             ["max_timeout_ms"] = tool.MaxTimeoutMs,
             ["requires_client_request_id"] = tool.RequiresClientRequestId,
-            ["execution_error_retryable"] = tool.ExecutionErrorRetryable,
         };
     }
 

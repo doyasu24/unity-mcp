@@ -21,18 +21,18 @@ LLM のワークフロー:
 
 ## 2. ツール一覧
 
-| # | ツール名 | 種別 | timeout(ms) | retryable |
-|---|---|---|---|---|
-| 1 | `list_scenes` | read-only | 5000/10000 | true |
-| 2 | `open_scene` | edit | 30000/60000 | false |
-| 3 | `save_scene` | edit | 30000/60000 | false |
-| 4 | `create_scene` | edit | 30000/60000 | false |
-| 5 | `get_hierarchy` | read-only | 10000/30000 | true |
-| 6 | `get_component_info` | read-only | 10000/30000 | true |
-| 7 | `manage_component` | edit | 10000/30000 | false |
-| 8 | `find_game_objects` | read-only | 10000/30000 | true |
-| 9 | `manage_game_object` | edit | 10000/30000 | false |
-| 10 | `instantiate_prefab` | edit | 10000/30000 | false |
+| # | ツール名 | 種別 | timeout(ms) |
+|---|---|---|---|
+| 1 | `list_scenes` | read-only | 5000/10000 |
+| 2 | `open_scene` | edit | 30000/60000 |
+| 3 | `save_scene` | edit | 30000/60000 |
+| 4 | `create_scene` | edit | 30000/60000 |
+| 5 | `get_hierarchy` | read-only | 10000/30000 |
+| 6 | `get_component_info` | read-only | 10000/30000 |
+| 7 | `manage_component` | edit | 10000/30000 |
+| 8 | `find_game_objects` | read-only | 10000/30000 |
+| 9 | `manage_game_object` | edit | 10000/30000 |
+| 10 | `instantiate_prefab` | edit | 10000/30000 |
 
 timeout 列は `default_timeout_ms / max_timeout_ms`。
 
@@ -147,7 +147,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 | `default_timeout_ms` | `5000` |
 | `max_timeout_ms` | `10000` |
 | `requires_client_request_id` | `false` |
-| `execution_error_retryable` | `true` |
+
 
 ---
 
@@ -197,7 +197,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 | `default_timeout_ms` | `30000` |
 | `max_timeout_ms` | `60000` |
 | `requires_client_request_id` | `false` |
-| `execution_error_retryable` | `false` |
+
 
 ---
 
@@ -238,7 +238,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 | `default_timeout_ms` | `30000` |
 | `max_timeout_ms` | `60000` |
 | `requires_client_request_id` | `false` |
-| `execution_error_retryable` | `false` |
+
 
 ---
 
@@ -287,7 +287,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 | `default_timeout_ms` | `30000` |
 | `max_timeout_ms` | `60000` |
 | `requires_client_request_id` | `false` |
-| `execution_error_retryable` | `false` |
+
 
 ---
 
@@ -411,7 +411,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 | `default_timeout_ms` | `10000` |
 | `max_timeout_ms` | `30000` |
 | `requires_client_request_id` | `false` |
-| `execution_error_retryable` | `true` |
+
 
 ---
 
@@ -492,7 +492,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 | `default_timeout_ms` | `10000` |
 | `max_timeout_ms` | `30000` |
 | `requires_client_request_id` | `false` |
-| `execution_error_retryable` | `true` |
+
 
 ---
 
@@ -591,7 +591,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 | `default_timeout_ms` | `10000` |
 | `max_timeout_ms` | `30000` |
 | `requires_client_request_id` | `false` |
-| `execution_error_retryable` | `false` |
+
 
 ---
 
@@ -689,7 +689,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 | `default_timeout_ms` | `10000` |
 | `max_timeout_ms` | `30000` |
 | `requires_client_request_id` | `false` |
-| `execution_error_retryable` | `true` |
+
 
 ---
 
@@ -833,7 +833,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 | `default_timeout_ms` | `10000` |
 | `max_timeout_ms` | `30000` |
 | `requires_client_request_id` | `false` |
-| `execution_error_retryable` | `false` |
+
 
 ---
 
@@ -920,7 +920,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 | `default_timeout_ms` | `10000` |
 | `max_timeout_ms` | `30000` |
 | `requires_client_request_id` | `false` |
-| `execution_error_retryable` | `false` |
+
 
 ---
 

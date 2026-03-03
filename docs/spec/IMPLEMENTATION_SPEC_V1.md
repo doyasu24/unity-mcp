@@ -219,7 +219,6 @@ Plugin:
 
 ### 6.7 capability tool metadata
 1. `capability.tools[]` は少なくとも `name/default_timeout_ms/max_timeout_ms/requires_client_request_id` を含む。
-2. `execution_error_retryable` は予約フィールドとして任意送信可（現在は判定に使わない）。
 
 ## 7. 実行モデル
 ### 7.1 Request状態
@@ -322,4 +321,4 @@ Rules:
 ## 13. 未実装事項
 1. `client_request_id` のサーバー側dedupe（未完了重複拒否、完了結果再利用、TTL管理）。
 2. dedupe有効化時の `ERR_DUPLICATE_REQUEST` 復帰と `retryable/execution_guarantee` 対応表の更新。
-3. 厳密エラー契約（tool単位 `execution_error_retryable` / `execution_guarantee` マトリクス）。
+3. 厳密エラー契約（tool単位 `execution_guarantee` マトリクス）。
