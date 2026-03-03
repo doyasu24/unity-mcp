@@ -493,9 +493,18 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 
 ### 10.2 出力仕様
 
+MCP レスポンスの `content` 配列には以下の 2 ブロックが含まれる:
+1. `type: "image"` — base64 エンコードされた PNG (`mimeType: "image/png"`)
+2. `type: "text"` — JSON メタデータ（下記）
+
+ファイルサイズが 5MB を超える場合、image block は省略されテキストのみとなる。
+
+`structuredContent` は含まれない（`structuredContent` が存在すると一部 MCP クライアントが `content` 配列を無視するため）。
+
+テキストブロックの JSON メタデータ:
 ```json
 {
-  "output_path": "/path/to/Screenshots/unity_screenshot_20260302_120000.png",
+  "file_path": "/path/to/Screenshots/unity_screenshot_20260302_120000.png",
   "width": 1920,
   "height": 1080,
   "camera_name": "Main Camera",

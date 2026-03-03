@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
@@ -21,6 +22,12 @@ internal sealed class McpToolService
         try
         {
             var payload = await ExecuteToolAsync(toolName, arguments, cancellationToken);
+
+            if (string.Equals(toolName, ToolNames.CaptureScreenshot, StringComparison.Ordinal))
+            {
+                return FormatScreenshotResult(payload);
+            }
+
             return ToolResultFormatter.Success(payload);
         }
         catch (McpException ex)
@@ -34,6 +41,38 @@ internal sealed class McpToolService
                 ErrorCodes.UnityExecution,
                 "Unexpected server error",
                 new JsonObject { ["message"] = ex.Message }));
+        }
+    }
+
+    private const int MaxInlineImageBytes = 5 * 1024 * 1024; // 5 MB
+
+    private static JsonObject FormatScreenshotResult(object payload)
+    {
+        var structured = ToolResultFormatter.ToStructuredContent(payload);
+        var filePath = (structured as JsonObject)?["file_path"]?.GetValue<string>();
+
+        if (string.IsNullOrEmpty(filePath) ||
+            !filePath.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+            !File.Exists(filePath))
+        {
+            return ToolResultFormatter.Success(payload);
+        }
+
+        try
+        {
+            var fileInfo = new FileInfo(filePath);
+            if (fileInfo.Length > MaxInlineImageBytes)
+            {
+                return ToolResultFormatter.Success(payload);
+            }
+
+            var pngBytes = File.ReadAllBytes(filePath);
+            var base64 = Convert.ToBase64String(pngBytes);
+            return ToolResultFormatter.SuccessWithImage(structured, base64, "image/png");
+        }
+        catch
+        {
+            return ToolResultFormatter.Success(payload);
         }
     }
 
@@ -1104,12 +1143,33 @@ internal static class ToolResultFormatter
         };
     }
 
-    private static JsonNode ToStructuredContent(object payload)
+    internal static JsonNode ToStructuredContent(object payload)
     {
         return payload switch
         {
             JsonNode node => node.DeepClone(),
             _ => JsonSerializer.SerializeToNode(payload, JsonDefaults.Options) ?? new JsonObject(),
+        };
+    }
+
+    public static JsonObject SuccessWithImage(JsonNode structuredContent, string base64Data, string mimeType)
+    {
+        return new JsonObject
+        {
+            ["content"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "image",
+                    ["data"] = base64Data,
+                    ["mimeType"] = mimeType,
+                },
+                new JsonObject
+                {
+                    ["type"] = "text",
+                    ["text"] = structuredContent.ToJsonString(JsonDefaults.Options),
+                },
+            },
         };
     }
 }

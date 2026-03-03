@@ -38,7 +38,7 @@ graph LR
 | `get_asset_info` | Returns detailed metadata for a Unity asset at the specified path. |
 | `manage_asset` | Creates or deletes Unity assets, and manages material properties: get/set shader properties, change shaders, and control shader keywords. |
 | **Screenshot** | |
-| `capture_screenshot` | Captures a screenshot from Game View or Scene View and saves it as a PNG file. |
+| `capture_screenshot` | Captures a screenshot from Game View or Scene View. Returns the image inline (base64 PNG) so the LLM can see it directly, and also saves a copy to `<project>/Screenshots/`. |
 
 ## Pagination
 
@@ -197,3 +197,11 @@ codex mcp add unity-b --url http://127.0.0.1:48092/mcp
 
 - Verify each project uses a different port.
 - Verify your MCP client is targeting the intended server entry (`unity-a`, `unity-b`, etc.).
+
+## Screenshots
+
+`capture_screenshot` saves PNG files to `<your-unity-project>/Screenshots/`. Add this directory to your `.gitignore`:
+
+```gitignore
+/Screenshots/
+```
