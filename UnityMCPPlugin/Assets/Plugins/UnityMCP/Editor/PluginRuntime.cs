@@ -30,7 +30,6 @@ namespace UnityMcpPlugin
 
         private readonly EditorStateTracker _editorStateTracker = new();
         private readonly CommandExecutor _commandExecutor;
-        private readonly JobExecutor _jobExecutor;
         private readonly CommandRouter _commandRouter;
         private readonly BridgeConnectionManager _connectionManager;
         private readonly string _editorInstanceId;
@@ -67,9 +66,8 @@ namespace UnityMcpPlugin
 
         private PluginRuntime()
         {
-            _jobExecutor = new();
             _commandExecutor = new(GetEditorSnapshot);
-            _commandRouter = new(_commandExecutor, _jobExecutor, SendMessageAsync, SendProtocolErrorAsync);
+            _commandRouter = new(_commandExecutor, SendMessageAsync, SendProtocolErrorAsync);
             _connectionManager = new BridgeConnectionManager(
                 Host,
                 UnityWsPath,
@@ -205,8 +203,6 @@ namespace UnityMcpPlugin
             var connection = snapshot.Connected ? "connected" : "waiting_editor";
             return $"{connection}, desired_port={desiredPort}, connected_port={connectedPort}, editor_state={Wire.ToWireState(snapshot.State)}, seq={snapshot.Seq}";
         }
-
-        internal void ReattachRunningJobs() => _jobExecutor.ReattachRunningJobs();
 
         internal void PublishEditorState(EditorBridgeState nextState)
         {

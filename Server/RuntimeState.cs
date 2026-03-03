@@ -27,16 +27,6 @@ internal enum WaitingReason
     Reloading,
 }
 
-internal enum JobState
-{
-    Queued,
-    Running,
-    Succeeded,
-    Failed,
-    Timeout,
-    Cancelled,
-}
-
 internal static class WireState
 {
     public static string ToWire(this ServerState state) => state switch
@@ -58,17 +48,6 @@ internal static class WireState
         _ => "unknown",
     };
 
-    public static string ToWire(this JobState state) => state switch
-    {
-        JobState.Queued => "queued",
-        JobState.Running => "running",
-        JobState.Succeeded => "succeeded",
-        JobState.Failed => "failed",
-        JobState.Timeout => "timeout",
-        JobState.Cancelled => "cancelled",
-        _ => "failed",
-    };
-
     public static EditorState ParseEditorState(string? value) => value switch
     {
         "ready" => EditorState.Ready,
@@ -76,24 +55,6 @@ internal static class WireState
         "reloading" => EditorState.Reloading,
         _ => EditorState.Unknown,
     };
-
-    public static bool TryParseJobState(string? value, out JobState state)
-    {
-        state = value switch
-        {
-            "queued" => JobState.Queued,
-            "running" => JobState.Running,
-            "succeeded" => JobState.Succeeded,
-            "failed" => JobState.Failed,
-            "timeout" => JobState.Timeout,
-            "cancelled" => JobState.Cancelled,
-            _ => JobState.Failed,
-        };
-
-        return value is "queued" or "running" or "succeeded" or "failed" or "timeout" or "cancelled";
-    }
-
-    public static bool IsTerminal(JobState state) => state is JobState.Succeeded or JobState.Failed or JobState.Timeout or JobState.Cancelled;
 
     public static string ToWire(this WaitingReason reason) => reason switch
     {

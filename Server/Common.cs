@@ -20,7 +20,6 @@ internal static class Constants
     public const int EditorStatusIntervalMs = 5_000;
     public const int RequestReconnectWaitMs = 45000;
     public const int CompileGraceTimeoutMs = 90000;
-    public const int JobLongPollMs = 5000;
     public const string McpSessionHeader = "Mcp-Session-Id";
     public const string DefaultMcpProtocolVersion = "2025-03-26";
 }
@@ -37,10 +36,8 @@ internal static class ErrorCodes
     public const string ReconnectTimeout = "ERR_RECONNECT_TIMEOUT";
     public const string RequestTimeout = "ERR_REQUEST_TIMEOUT";
     public const string QueueFull = "ERR_QUEUE_FULL";
-    public const string JobNotFound = "ERR_JOB_NOT_FOUND";
     public const string UnityExecution = "ERR_UNITY_EXECUTION";
     public const string InvalidResponse = "ERR_INVALID_RESPONSE";
-    public const string CancelRejected = "ERR_CANCEL_REJECTED";
 }
 
 internal static class ConfigLoader

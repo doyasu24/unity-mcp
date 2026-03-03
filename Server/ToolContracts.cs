@@ -11,7 +11,6 @@ internal static class ToolNames
     public const string RefreshAssets = "refresh_assets";
     public const string ControlPlayMode = "control_play_mode";
     public const string RunTests = "run_tests";
-    public const string ManageJob = "manage_job";
     // Unified MCP tool names (LLM-facing)
     public const string GetHierarchy = "get_hierarchy";
     public const string GetComponentInfo = "get_component_info";
@@ -232,12 +231,6 @@ internal sealed record ControlPlayModeRequest(string Action);
 
 internal sealed record RunTestsRequest(string Mode, string? Filter);
 
-internal sealed record JobStatusRequest(string JobId);
-
-internal sealed record CancelJobRequest(string JobId);
-
-internal sealed record WaitJobRequest(string JobId);
-
 internal sealed record ReadConsoleResult(JsonNode Payload);
 
 internal sealed record GetPlayModeStateResult(JsonNode Payload);
@@ -248,11 +241,7 @@ internal sealed record RefreshAssetsResult(JsonNode Payload);
 
 internal sealed record ControlPlayModeResult(JsonNode Payload);
 
-internal sealed record RunTestsResult(string JobId, string State, JsonNode? Result = null);
-
-internal sealed record JobStatusResult(string JobId, string State, JsonNode? Progress, JsonNode Result);
-
-internal sealed record CancelJobResult(string JobId, string Status);
+internal sealed record RunTestsResult(JsonNode Payload);
 
 internal sealed record ListScenesRequest(string? NamePattern, int MaxResults, int Offset);
 
@@ -321,23 +310,6 @@ internal sealed record GetAssetInfoResult(JsonNode Payload);
 internal sealed record FindPrefabGameObjectsRequest(string PrefabPath, string? Name, string? Tag, string? ComponentType, string? RootPath, int? Layer, bool? Active, int MaxResults, int Offset);
 
 internal sealed record FindPrefabGameObjectsResult(JsonNode Payload);
-
-internal static class ManageJobActions
-{
-    public const string GetStatus = "get_status";
-    public const string Wait = "wait";
-    public const string Cancel = "cancel";
-
-    public static bool IsSupported(string? action)
-    {
-        return action is GetStatus or Wait or Cancel;
-    }
-
-    public static JsonArray ToJsonArray()
-    {
-        return new JsonArray(GetStatus, Wait, Cancel);
-    }
-}
 
 internal static class ManageAssetActions
 {

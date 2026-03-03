@@ -15,11 +15,11 @@ LLM のワークフロー:
 
 ## 2. ツール一覧
 
-| # | ツール名 | 種別 | execution_mode | timeout(ms) | retryable |
-|---|---|---|---|---|---|
-| 1 | `find_assets` | read-only | sync | 10000/30000 | true |
-| 2 | `get_asset_info` | read-only | sync | 10000/30000 | true |
-| 3 | `manage_asset` | edit | sync | 15000/30000 | false |
+| # | ツール名 | 種別 | timeout(ms) | retryable |
+|---|---|---|---|---|
+| 1 | `find_assets` | read-only | 10000/30000 | true |
+| 2 | `get_asset_info` | read-only | 10000/30000 | true |
+| 3 | `manage_asset` | edit | 15000/30000 | false |
 
 timeout 列は `default_timeout_ms / max_timeout_ms`。
 
@@ -96,8 +96,6 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 
 | 項目 | 値 |
 |---|---|
-| `execution_mode` | `sync` |
-| `supports_cancel` | `false` |
 | `default_timeout_ms` | `10000` |
 | `max_timeout_ms` | `30000` |
 | `requires_client_request_id` | `false` |
@@ -171,8 +169,6 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 
 | 項目 | 値 |
 |---|---|
-| `execution_mode` | `sync` |
-| `supports_cancel` | `false` |
 | `default_timeout_ms` | `10000` |
 | `max_timeout_ms` | `30000` |
 | `requires_client_request_id` | `false` |
@@ -392,8 +388,6 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 
 | 項目 | 値 |
 |---|---|
-| `execution_mode` | `sync` |
-| `supports_cancel` | `false` |
 | `default_timeout_ms` | `15000` |
 | `max_timeout_ms` | `30000` |
 | `requires_client_request_id` | `false` |

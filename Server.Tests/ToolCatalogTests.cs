@@ -22,13 +22,9 @@ public sealed class ToolCatalogTests
         var tools = ToolCatalog.BuildUnityCapabilityTools();
 
         var clearConsole = AssertToolExists(tools, ToolNames.ClearConsole);
-        Assert.Equal("sync", clearConsole["execution_mode"]?.GetValue<string>());
-        Assert.False(clearConsole["supports_cancel"]?.GetValue<bool>());
         Assert.False(clearConsole["requires_client_request_id"]?.GetValue<bool>());
 
         var refreshAssets = AssertToolExists(tools, ToolNames.RefreshAssets);
-        Assert.Equal("sync", refreshAssets["execution_mode"]?.GetValue<string>());
-        Assert.False(refreshAssets["supports_cancel"]?.GetValue<bool>());
         Assert.False(refreshAssets["requires_client_request_id"]?.GetValue<bool>());
 
         AssertSyncToolWithoutCancel(tools, ToolNames.GetPlayModeState);
@@ -491,8 +487,6 @@ public sealed class ToolCatalogTests
     private static void AssertSyncToolWithoutCancel(JsonArray tools, string toolName)
     {
         var tool = AssertToolExists(tools, toolName);
-        Assert.Equal("sync", tool["execution_mode"]?.GetValue<string>());
-        Assert.False(tool["supports_cancel"]?.GetValue<bool>());
         Assert.False(tool["requires_client_request_id"]?.GetValue<bool>());
     }
 

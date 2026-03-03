@@ -8,18 +8,19 @@ public sealed class ToolResultFormatterTests
     [Fact]
     public void Success_WithTypedPayload_SerializesStructuredContent()
     {
-        var response = ToolResultFormatter.Success(new RunTestsResult("job-1", "queued"));
+        var payload = new JsonObject { ["summary"] = new JsonObject { ["total"] = 5, ["passed"] = 5 } };
+        var response = ToolResultFormatter.Success(new RunTestsResult(payload).Payload);
 
         var structured = Assert.IsType<JsonObject>(response["structuredContent"]);
-        Assert.Equal("job-1", structured["jobId"]?.GetValue<string>());
-        Assert.Equal("queued", structured["state"]?.GetValue<string>());
+        Assert.Equal(5, structured["summary"]?["total"]?.GetValue<int>());
+        Assert.Equal(5, structured["summary"]?["passed"]?.GetValue<int>());
 
         var content = Assert.IsType<JsonArray>(response["content"]);
         var textItem = Assert.IsType<JsonObject>(content[0]);
         var text = textItem["text"]?.GetValue<string>();
 
-        Assert.Contains("\"jobId\":\"job-1\"", text);
-        Assert.Contains("\"state\":\"queued\"", text);
+        Assert.Contains("\"total\":5", text);
+        Assert.Contains("\"passed\":5", text);
     }
 
     [Fact]

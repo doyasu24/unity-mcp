@@ -47,8 +47,7 @@ internal sealed class McpToolService
             ToolNames.ClearConsole => (await _unityBridge.ClearConsoleAsync(cancellationToken)).Payload,
             ToolNames.RefreshAssets => (await _unityBridge.RefreshAssetsAsync(cancellationToken)).Payload,
             ToolNames.ControlPlayMode => (await _unityBridge.ControlPlayModeAsync(ParseControlPlayModeRequest(arguments), cancellationToken)).Payload,
-            ToolNames.RunTests => await _unityBridge.RunTestsAsync(ParseRunTestsRequest(arguments), cancellationToken),
-            ToolNames.ManageJob => await ExecuteManageJobAsync(arguments, cancellationToken),
+            ToolNames.RunTests => (await _unityBridge.RunTestsAsync(ParseRunTestsRequest(arguments), cancellationToken)).Payload,
             ToolNames.GetHierarchy => await ExecuteGetHierarchyAsync(arguments, cancellationToken),
             ToolNames.GetComponentInfo => await ExecuteGetComponentInfoAsync(arguments, cancellationToken),
             ToolNames.ManageComponent => await ExecuteManageComponentAsync(arguments, cancellationToken),
@@ -154,39 +153,6 @@ internal sealed class McpToolService
         }
 
         return new ControlPlayModeRequest(action!);
-    }
-
-    private async Task<object> ExecuteManageJobAsync(JsonObject arguments, CancellationToken cancellationToken)
-    {
-        var action = JsonHelpers.GetString(arguments, "action");
-        if (!ManageJobActions.IsSupported(action))
-        {
-            throw new McpException(
-                ErrorCodes.InvalidParams,
-                $"action must be one of {ManageJobActions.GetStatus}|{ManageJobActions.Wait}|{ManageJobActions.Cancel}",
-                new JsonObject { ["action"] = action });
-        }
-
-        var jobId = ParseRequiredJobId(arguments);
-
-        return action switch
-        {
-            ManageJobActions.GetStatus => await _unityBridge.GetJobStatusAsync(new JobStatusRequest(jobId), cancellationToken),
-            ManageJobActions.Wait => await _unityBridge.WaitJobAsync(new WaitJobRequest(jobId), cancellationToken),
-            ManageJobActions.Cancel => await _unityBridge.CancelJobAsync(new CancelJobRequest(jobId), cancellationToken),
-            _ => throw new McpException(ErrorCodes.InvalidParams, $"Unsupported action: {action}"),
-        };
-    }
-
-    private static string ParseRequiredJobId(JsonObject arguments)
-    {
-        var jobId = JsonHelpers.GetString(arguments, "job_id");
-        if (string.IsNullOrWhiteSpace(jobId))
-        {
-            throw new McpException(ErrorCodes.InvalidParams, "job_id is required");
-        }
-
-        return jobId;
     }
 
     private static bool HasPrefabPath(JsonObject arguments)

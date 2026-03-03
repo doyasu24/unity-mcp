@@ -4,8 +4,6 @@ namespace UnityMcpServer;
 
 internal sealed record ToolMetadata(
     string Name,
-    string ExecutionMode,
-    bool SupportsCancel,
     int DefaultTimeoutMs,
     int MaxTimeoutMs,
     bool RequiresClientRequestId,
@@ -19,8 +17,6 @@ internal static class ToolCatalog
     {
         [ToolNames.GetEditorState] = new(
             ToolNames.GetEditorState,
-            "sync",
-            false,
             5000,
             10000,
             false,
@@ -29,8 +25,6 @@ internal static class ToolCatalog
             EmptyObjectSchema()),
         [ToolNames.GetPlayModeState] = new(
             ToolNames.GetPlayModeState,
-            "sync",
-            false,
             5000,
             10000,
             false,
@@ -39,8 +33,6 @@ internal static class ToolCatalog
             EmptyObjectSchema()),
         [ToolNames.ReadConsole] = new(
             ToolNames.ReadConsole,
-            "sync",
-            false,
             10000,
             30000,
             false,
@@ -99,8 +91,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.ClearConsole] = new(
             ToolNames.ClearConsole,
-            "sync",
-            false,
             5000,
             10000,
             false,
@@ -109,8 +99,6 @@ internal static class ToolCatalog
             EmptyObjectSchema()),
         [ToolNames.RefreshAssets] = new(
             ToolNames.RefreshAssets,
-            "sync",
-            false,
             30000,
             120000,
             false,
@@ -119,8 +107,6 @@ internal static class ToolCatalog
             EmptyObjectSchema()),
         [ToolNames.ControlPlayMode] = new(
             ToolNames.ControlPlayMode,
-            "sync",
-            false,
             10000,
             30000,
             false,
@@ -142,13 +128,11 @@ internal static class ToolCatalog
             }),
         [ToolNames.RunTests] = new(
             ToolNames.RunTests,
-            "job",
-            true,
             300000,
             1800000,
             false,
             false,
-            "Starts Unity tests as a cancellable job. If tests complete within 5s, returns result directly. Otherwise returns job_id for polling with manage_job.",
+            "Runs Unity tests and returns the result.",
             new JsonObject
             {
                 ["type"] = "object",
@@ -167,39 +151,8 @@ internal static class ToolCatalog
                 },
                 ["additionalProperties"] = false,
             }),
-        [ToolNames.ManageJob] = new(
-            ToolNames.ManageJob,
-            "sync",
-            false,
-            10000,
-            15000,
-            false,
-            false,
-            "Checks state/result or requests cancellation of a submitted test job.",
-            new JsonObject
-            {
-                ["type"] = "object",
-                ["properties"] = new JsonObject
-                {
-                    ["action"] = new JsonObject
-                    {
-                        ["type"] = "string",
-                        ["enum"] = ManageJobActions.ToJsonArray(),
-                        ["description"] = "Operation: 'get_status' returns current state immediately; 'wait' blocks up to 5s and returns immediately when job completes; 'cancel' requests cancellation.",
-                    },
-                    ["job_id"] = new JsonObject
-                    {
-                        ["type"] = "string",
-                        ["minLength"] = 1,
-                    },
-                },
-                ["required"] = new JsonArray("action", "job_id"),
-                ["additionalProperties"] = false,
-            }),
         [ToolNames.GetHierarchy] = new(
             ToolNames.GetHierarchy,
-            "sync",
-            false,
             10000,
             30000,
             false,
@@ -250,8 +203,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.GetComponentInfo] = new(
             ToolNames.GetComponentInfo,
-            "sync",
-            false,
             10000,
             30000,
             false,
@@ -294,8 +245,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.ManageComponent] = new(
             ToolNames.ManageComponent,
-            "sync",
-            false,
             10000,
             30000,
             false,
@@ -347,8 +296,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.ListScenes] = new(
             ToolNames.ListScenes,
-            "sync",
-            false,
             5000,
             10000,
             false,
@@ -384,8 +331,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.OpenScene] = new(
             ToolNames.OpenScene,
-            "sync",
-            false,
             30000,
             60000,
             false,
@@ -414,8 +359,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.SaveScene] = new(
             ToolNames.SaveScene,
-            "sync",
-            false,
             30000,
             60000,
             false,
@@ -436,8 +379,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.CreateScene] = new(
             ToolNames.CreateScene,
-            "sync",
-            false,
             30000,
             60000,
             false,
@@ -466,8 +407,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.FindAssets] = new(
             ToolNames.FindAssets,
-            "sync",
-            false,
             10000,
             30000,
             false,
@@ -510,8 +449,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.FindGameObjects] = new(
             ToolNames.FindGameObjects,
-            "sync",
-            false,
             10000,
             30000,
             false,
@@ -575,8 +512,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.InstantiatePrefab] = new(
             ToolNames.InstantiatePrefab,
-            "sync",
-            false,
             10000,
             30000,
             false,
@@ -638,8 +573,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.GetAssetInfo] = new(
             ToolNames.GetAssetInfo,
-            "sync",
-            false,
             10000,
             30000,
             false,
@@ -661,8 +594,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.ManageGameObject] = new(
             ToolNames.ManageGameObject,
-            "sync",
-            false,
             10000,
             30000,
             false,
@@ -736,8 +667,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.ManageAsset] = new(
             ToolNames.ManageAsset,
-            "sync",
-            false,
             15000,
             30000,
             false,
@@ -800,8 +729,6 @@ internal static class ToolCatalog
             }),
         [ToolNames.CaptureScreenshot] = new(
             ToolNames.CaptureScreenshot,
-            "sync",
-            false,
             15000,
             60000,
             false,
@@ -936,8 +863,6 @@ internal static class ToolCatalog
         return new JsonObject
         {
             ["name"] = wireName,
-            ["execution_mode"] = tool.ExecutionMode,
-            ["supports_cancel"] = tool.SupportsCancel,
             ["default_timeout_ms"] = tool.DefaultTimeoutMs,
             ["max_timeout_ms"] = tool.MaxTimeoutMs,
             ["requires_client_request_id"] = tool.RequiresClientRequestId,

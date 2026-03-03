@@ -9,9 +9,6 @@ namespace UnityMcpPlugin
         internal const string RefreshAssets = "refresh_assets";
         internal const string ControlPlayMode = "control_play_mode";
         internal const string RunTests = "run_tests";
-        internal const string GetJobStatus = "get_job_status";
-        internal const string WaitJob = "wait_job";
-        internal const string Cancel = "cancel";
         internal const string GetSceneHierarchy = "get_scene_hierarchy";
         internal const string GetSceneComponentInfo = "get_scene_component_info";
         internal const string ManageSceneComponent = "manage_scene_component";

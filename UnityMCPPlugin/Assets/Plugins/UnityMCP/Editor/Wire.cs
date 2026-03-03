@@ -21,25 +21,5 @@ namespace UnityMcpPlugin
             }
         }
 
-        internal static string ToWireState(JobState state)
-        {
-            switch (state)
-            {
-                case JobState.Queued:
-                    return "queued";
-                case JobState.Running:
-                    return "running";
-                case JobState.Succeeded:
-                    return "succeeded";
-                case JobState.Failed:
-                    return "failed";
-                case JobState.Timeout:
-                    return "timeout";
-                case JobState.Cancelled:
-                    return "cancelled";
-                default:
-                    return "failed";
-            }
-        }
     }
 }

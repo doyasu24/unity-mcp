@@ -37,26 +37,4 @@ public sealed class WireStateTests
         Assert.Equal(expectedWire, parsed.ToWire());
     }
 
-    [Fact]
-    public void TryParseJobState_ReturnsFalse_ForUnknownState()
-    {
-        var parsed = WireState.TryParseJobState("something-else", out var state);
-
-        Assert.False(parsed);
-        Assert.Equal(JobState.Failed, state);
-    }
-
-    [Theory]
-    [InlineData("succeeded", true)]
-    [InlineData("failed", true)]
-    [InlineData("timeout", true)]
-    [InlineData("cancelled", true)]
-    [InlineData("queued", false)]
-    [InlineData("running", false)]
-    public void IsTerminal_ReturnsExpectedValue(string wireState, bool expected)
-    {
-        var parsed = WireState.TryParseJobState(wireState, out var state);
-        Assert.True(parsed);
-        Assert.Equal(expected, WireState.IsTerminal(state));
-    }
 }

@@ -13,9 +13,7 @@ internal readonly record struct EditorReadyWaitPolicy(TimeSpan Timeout, string T
 
 internal sealed class UnityBridge
 {
-    private static readonly TimeSpan JobRetention = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan ActiveSessionRejectLogThrottle = TimeSpan.FromSeconds(30);
-    private const int MaxRetainedJobs = 512;
 
     private sealed class PendingRequest : IDisposable
     {
@@ -38,13 +36,10 @@ internal sealed class UnityBridge
         }
     }
 
-    private sealed record JobRecord(JobState State, JsonNode? Result, DateTimeOffset UpdatedAt);
-
     private readonly RuntimeState _runtimeState;
     private readonly RequestScheduler _scheduler;
     private readonly UnitySessionRegistry _sessionRegistry = new();
     private readonly ConcurrentDictionary<string, PendingRequest> _pendingRequests = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, JobRecord> _jobs = new(StringComparer.Ordinal);
     private readonly object _activeSessionRejectLogGate = new();
 
     private CancellationTokenSource? _staleTimerCts;
@@ -133,7 +128,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ReadConsole);
             var parameters = new JsonObject
@@ -164,7 +158,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPlayModeState);
             var payload = await ExecuteSyncToolAsync(ToolNames.GetPlayModeState, new JsonObject(), timeoutMs, token);
@@ -176,7 +169,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ClearConsole);
             var payload = await ExecuteSyncToolAsync(ToolNames.ClearConsole, new JsonObject(), timeoutMs, token);
@@ -188,7 +180,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RefreshAssets);
             var payload = await ExecuteSyncToolAsync(ToolNames.RefreshAssets, new JsonObject(), timeoutMs, token);
@@ -200,7 +191,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ControlPlayMode);
             var payload = await ExecuteSyncToolAsync(
@@ -266,7 +256,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetSceneHierarchy);
             var parameters = new JsonObject
@@ -293,7 +282,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetSceneComponentInfo);
             var parameters = new JsonObject
@@ -322,7 +310,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageSceneComponent);
             var parameters = new JsonObject
@@ -359,7 +346,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPrefabHierarchy);
             var parameters = new JsonObject
@@ -387,7 +373,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPrefabComponentInfo);
             var parameters = new JsonObject
@@ -417,7 +402,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManagePrefabComponent);
             var parameters = new JsonObject
@@ -455,7 +439,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageSceneGameObject);
             var parameters = new JsonObject
@@ -516,7 +499,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManagePrefabGameObject);
             var parameters = new JsonObject
@@ -578,7 +560,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ListScenes);
             var parameters = new JsonObject
@@ -599,7 +580,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.OpenScene);
             var parameters = new JsonObject
@@ -616,7 +596,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.SaveScene);
             var parameters = new JsonObject();
@@ -634,7 +613,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.CreateScene);
             var parameters = new JsonObject
@@ -651,7 +629,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.FindAssets);
             var parameters = new JsonObject
@@ -680,7 +657,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.FindSceneGameObjects);
             var parameters = new JsonObject();
@@ -725,7 +701,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.InstantiatePrefab);
             var parameters = new JsonObject
@@ -766,7 +741,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetAssetInfo);
             var parameters = new JsonObject
@@ -782,7 +756,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.FindPrefabGameObjects);
             var parameters = new JsonObject
@@ -830,7 +803,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageAsset);
             var parameters = new JsonObject
@@ -883,7 +855,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.CaptureScreenshot);
             var parameters = new JsonObject
@@ -911,7 +882,6 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
-            PruneJobs();
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RunTests);
 
@@ -924,184 +894,8 @@ internal sealed class UnityBridge
                 parameters["filter"] = request.Filter;
             }
 
-            var requestMessage = new JsonObject
-            {
-                ["type"] = "submit_job",
-                ["request_id"] = Guid.NewGuid().ToString("D"),
-                ["tool_name"] = ToolNames.RunTests,
-                ["params"] = parameters,
-                ["timeout_ms"] = timeoutMs,
-                ["wait_ms"] = Constants.JobLongPollMs,
-            };
-
-            var response = await SendRequestAsync(
-                requestMessage,
-                "submit_job_result",
-                TimeSpan.FromMilliseconds(timeoutMs + Constants.JobLongPollMs),
-                token);
-
-            var status = JsonHelpers.GetString(response, "status");
-            var jobId = JsonHelpers.GetString(response, "job_id");
-            if (!string.Equals(status, "accepted", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(jobId))
-            {
-                throw new McpException(
-                    ErrorCodes.InvalidResponse,
-                    "Invalid submit_job_result payload",
-                    JsonHelpers.CloneNode(response));
-            }
-
-            if (!WireState.TryParseJobState(JsonHelpers.GetString(response, "state"), out var jobState))
-            {
-                jobState = JobState.Queued;
-            }
-
-            var result = JsonHelpers.CloneNode(response["result"]);
-            UpsertJob(jobId, jobState, result);
-
-            return new RunTestsResult(jobId, jobState.ToWire(), WireState.IsTerminal(jobState) ? result : null);
-        }, cancellationToken);
-    }
-
-    public Task<JobStatusResult> GetJobStatusAsync(JobStatusRequest request, CancellationToken cancellationToken)
-    {
-        return _scheduler.EnqueueAsync(async token =>
-        {
-            PruneJobs();
-            var jobId = request.JobId;
-            if (!_jobs.ContainsKey(jobId))
-            {
-                throw new McpException(ErrorCodes.JobNotFound, $"Unknown job_id: {jobId}");
-            }
-
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageJob);
-
-            var requestMessage = new JsonObject
-            {
-                ["type"] = "get_job_status",
-                ["request_id"] = Guid.NewGuid().ToString("D"),
-                ["job_id"] = jobId,
-            };
-
-            var response = await SendRequestAsync(
-                requestMessage,
-                "job_status",
-                TimeSpan.FromMilliseconds(timeoutMs),
-                token);
-
-            var stateRaw = JsonHelpers.GetString(response, "state");
-            if (!WireState.TryParseJobState(stateRaw, out var state))
-            {
-                throw new McpException(
-                    ErrorCodes.InvalidResponse,
-                    "Invalid job_status.state value",
-                    JsonHelpers.CloneNode(response));
-            }
-
-            var result = JsonHelpers.CloneNode(response["result"]) ?? new JsonObject();
-            UpsertJob(jobId, state, result);
-
-            return new JobStatusResult(jobId, state.ToWire(), null, result);
-        }, cancellationToken);
-    }
-
-    public Task<JobStatusResult> WaitJobAsync(WaitJobRequest request, CancellationToken cancellationToken)
-    {
-        return _scheduler.EnqueueAsync(async token =>
-        {
-            PruneJobs();
-            var jobId = request.JobId;
-            if (!_jobs.ContainsKey(jobId))
-            {
-                throw new McpException(ErrorCodes.JobNotFound, $"Unknown job_id: {jobId}");
-            }
-
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageJob);
-
-            var requestMessage = new JsonObject
-            {
-                ["type"] = "wait_job",
-                ["request_id"] = Guid.NewGuid().ToString("D"),
-                ["job_id"] = jobId,
-                ["wait_ms"] = Constants.JobLongPollMs,
-            };
-
-            var response = await SendRequestAsync(
-                requestMessage,
-                "job_status",
-                TimeSpan.FromMilliseconds(timeoutMs + Constants.JobLongPollMs),
-                token);
-
-            var stateRaw = JsonHelpers.GetString(response, "state");
-            if (!WireState.TryParseJobState(stateRaw, out var state))
-            {
-                throw new McpException(
-                    ErrorCodes.InvalidResponse,
-                    "Invalid job_status.state value",
-                    JsonHelpers.CloneNode(response));
-            }
-
-            var result = JsonHelpers.CloneNode(response["result"]) ?? new JsonObject();
-            UpsertJob(jobId, state, result);
-
-            return new JobStatusResult(jobId, state.ToWire(), null, result);
-        }, cancellationToken);
-    }
-
-    public Task<CancelJobResult> CancelJobAsync(CancelJobRequest request, CancellationToken cancellationToken)
-    {
-        return _scheduler.EnqueueAsync(async token =>
-        {
-            PruneJobs();
-            var jobId = request.JobId;
-            if (!_jobs.TryGetValue(jobId, out var existing))
-            {
-                throw new McpException(ErrorCodes.JobNotFound, $"Unknown job_id: {jobId}");
-            }
-
-            if (existing.State == JobState.Queued)
-            {
-                UpsertJob(jobId, JobState.Cancelled, existing.Result);
-                return new CancelJobResult(jobId, "cancelled");
-            }
-
-            if (WireState.IsTerminal(existing.State))
-            {
-                return new CancelJobResult(jobId, "rejected");
-            }
-
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageJob);
-
-            var requestMessage = new JsonObject
-            {
-                ["type"] = "cancel",
-                ["request_id"] = Guid.NewGuid().ToString("D"),
-                ["target_job_id"] = jobId,
-            };
-
-            var response = await SendRequestAsync(
-                requestMessage,
-                "cancel_result",
-                TimeSpan.FromMilliseconds(timeoutMs),
-                token);
-
-            var status = JsonHelpers.GetString(response, "status");
-            if (status is not ("cancelled" or "cancel_requested" or "rejected"))
-            {
-                throw new McpException(
-                    ErrorCodes.InvalidResponse,
-                    "Invalid cancel_result.status value",
-                    JsonHelpers.CloneNode(response));
-            }
-
-            if (string.Equals(status, "cancelled", StringComparison.Ordinal))
-            {
-                UpsertJob(jobId, JobState.Cancelled, existing.Result);
-            }
-
-            return new CancelJobResult(jobId, status);
+            var payload = await ExecuteSyncToolAsync(ToolNames.RunTests, parameters, timeoutMs, token);
+            return new RunTestsResult(payload);
         }, cancellationToken);
     }
 
@@ -1599,12 +1393,6 @@ internal sealed class UnityBridge
         return message.IndexOf("without completing the close handshake", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
-    private void UpsertJob(string jobId, JobState state, JsonNode? result)
-    {
-        _jobs[jobId] = new JobRecord(state, JsonHelpers.CloneNode(result), DateTimeOffset.UtcNow);
-        PruneJobs();
-    }
-
     private void LogRejectedActiveSessionWarning(string? editorInstanceId, string? pluginSessionId, ulong? connectAttemptSeq)
     {
         int suppressed = 0;
@@ -1647,55 +1435,6 @@ internal sealed class UnityBridge
             ("editor_instance_id", editorInstanceId),
             ("plugin_session_id", pluginSessionId),
             ("connect_attempt_seq", connectAttemptSeq));
-    }
-
-    private void PruneJobs()
-    {
-        var now = DateTimeOffset.UtcNow;
-        foreach (var (jobId, record) in _jobs)
-        {
-            if (!WireState.IsTerminal(record.State))
-            {
-                continue;
-            }
-
-            if (now - record.UpdatedAt <= JobRetention)
-            {
-                continue;
-            }
-
-            _jobs.TryRemove(jobId, out _);
-        }
-
-        var count = _jobs.Count;
-        if (count <= MaxRetainedJobs)
-        {
-            return;
-        }
-
-        var overflow = count - MaxRetainedJobs;
-        var removable = new List<KeyValuePair<string, JobRecord>>();
-        foreach (var pair in _jobs)
-        {
-            if (!WireState.IsTerminal(pair.Value.State))
-            {
-                continue;
-            }
-
-            removable.Add(pair);
-        }
-
-        if (removable.Count == 0)
-        {
-            return;
-        }
-
-        removable.Sort(static (left, right) => left.Value.UpdatedAt.CompareTo(right.Value.UpdatedAt));
-        var removeCount = Math.Min(overflow, removable.Count);
-        for (var i = 0; i < removeCount; i += 1)
-        {
-            _jobs.TryRemove(removable[i].Key, out _);
-        }
     }
 
     private static async Task SendRawAsync(WebSocket socket, JsonObject payload, CancellationToken cancellationToken)

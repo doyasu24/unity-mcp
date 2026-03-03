@@ -29,7 +29,6 @@ namespace UnityMcpPlugin
             {
                 PluginLogger.InitializeMainThreadState();
                 runtime.PublishEditorState(EditorBridgeState.Ready);
-                runtime.ReattachRunningJobs();
             };
             EditorApplication.quitting += runtime.Shutdown;
         }

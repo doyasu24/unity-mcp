@@ -10,16 +10,6 @@ namespace UnityMcpPlugin
         Reloading,
     }
 
-    internal enum JobState
-    {
-        Queued,
-        Running,
-        Succeeded,
-        Failed,
-        Timeout,
-        Cancelled,
-    }
-
     internal enum PortReconfigureStatus
     {
         Applied,

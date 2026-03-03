@@ -307,39 +307,6 @@ public sealed class McpToolServiceTests
     }
 
     [Fact]
-    public async Task CallToolAsync_ReturnsError_ForManageJob_InvalidAction()
-    {
-        var service = CreateService(new RuntimeState());
-
-        var args = new JsonObject
-        {
-            ["action"] = "invalid",
-            ["job_id"] = "some-job-id",
-        };
-        var result = await service.CallToolAsync(ToolNames.ManageJob, args, CancellationToken.None);
-
-        Assert.True(result["isError"]?.GetValue<bool>());
-        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
-        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
-    }
-
-    [Fact]
-    public async Task CallToolAsync_ReturnsError_ForManageJob_MissingJobId()
-    {
-        var service = CreateService(new RuntimeState());
-
-        var args = new JsonObject
-        {
-            ["action"] = "get_status",
-        };
-        var result = await service.CallToolAsync(ToolNames.ManageJob, args, CancellationToken.None);
-
-        Assert.True(result["isError"]?.GetValue<bool>());
-        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
-        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
-    }
-
-    [Fact]
     public async Task CallToolAsync_ReturnsError_ForFindGameObjects_NoFilter()
     {
         var service = CreateService(new RuntimeState());

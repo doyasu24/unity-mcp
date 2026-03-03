@@ -13,9 +13,9 @@
 2. MCP endpointは `Streamable HTTP` (`/mcp`) で提供する
 3. Unity接続はWebSocket (`/unity`) のみ
 4. `waiting_editor` / `ready` / `compiling` / `reloading` を考慮した実行制御
-5. `sync` + `job` 実行モデル
-6. 28ツール（4ドメイン）
-   - Editor（9）: エディタ状態・Play Mode・コンソール・テスト・スクリーンショット
+5. `sync` 実行モデル
+6. 27ツール（4ドメイン）
+   - Editor（8）: エディタ状態・Play Mode・コンソール・テスト・スクリーンショット
    - Scene（10）: シーン管理・階層・コンポーネント・GameObject・検索
    - Prefab（5）: Prefab階層・コンポーネント・GameObject・検索
    - Asset（4）: アセット検索・情報取得・管理・マテリアル操作
@@ -55,22 +55,17 @@
    - tool存在・引数・timeout上限・`client_request_id` の形式要件を検証
 5. `RequestScheduler`
    - Unity往復要求を単一FIFOキューへ投入
-   - `manage_job` を含む全要求を同一キューで順序制御する
+   - 全要求を同一キューで順序制御する
 6. `ExecutionCoordinator`
-   - `sync/job` 実行分岐、待機、timeout、cancelを統合制御
-   - 制御toolは `JobManager/CancelManager` へ委譲
+   - 実行分岐、待機、timeout を統合制御
 7. `UnityBridgeClient`
    - `/unity` upgrade経由のPlugin WebSocketセッション管理
-   - 送受信 (`hello/editor_status/result/submit_job_result/job_status/cancel_result`)
+   - 送受信 (`hello/editor_status/execute/result`)
 8. `ReconnectController`
    - 切断後の再接続待機ウィンドウ管理（Plugin再接続前提）
 9. `EditorStateTracker`
    - `ready/compiling/reloading` と `seq` 管理
-10. `JobManager`
-    - `job_id` 発行、job状態管理（非永続）
-11. `CancelManager`
-    - cancel転送と結果整形
-12. `Logger`
+10. `Logger`
     - `request_id/client_request_id/job_id` 相関ログ
 
 ### 3.1 コンポーネント間エラー伝播
@@ -148,7 +143,7 @@ Plugin:
 6. `hello` 交換成功で `ready`
 
 ### 5.4 `waiting_editor` 受理ポリシー
-1. `sync/job` は待機理由に応じて次の上限まで待機する。
+1. 要求は待機理由に応じて次の上限まで待機する。
    - `reconnecting`: `request_reconnect_wait_ms` (45000ms)
    - `compiling|reloading`: `compile_grace_timeout_ms` (90000ms)
 2. 復帰成功時のみ実行
@@ -156,9 +151,7 @@ Plugin:
    - `reconnecting`: `ERR_EDITOR_NOT_READY`
    - `compiling|reloading`: `ERR_COMPILE_TIMEOUT`
 4. 3の失敗は `retryable=true`, `execution_guarantee=not_executed`, `recovery_action=retry_allowed` を返す。
-5. `submit_job` 超過時は `job_id` 未発行
-6. 待機中 cancel は即時 `cancelled`
-7. 復帰後の再開順序は FIFO
+5. 復帰後の再開順序は FIFO
 
 ### 5.5 Shutdown
 1. `stopping` 遷移後は新規要求を受理しない
@@ -193,9 +186,7 @@ Plugin:
 2. `capability`
 3. `editor_status`
 4. `execute` / `result`
-5. `submit_job` / `submit_job_result`
-6. `manage_job` (`get_job_status` / `job_status`, `wait_job` / `job_status`, `cancel` / `cancel_result`)
-7. `error`
+5. `error`
 
 ### 6.3 接続シーケンス
 1. Pluginが `ws://127.0.0.1:{port}/unity` へ接続
@@ -215,8 +206,7 @@ Plugin:
 ### 6.4 フィールド命名
 1. 相関キーは `request_id`
 2. `client_request_id` はidempotencyキーとして予約する（現在は受理のみで重複判定には使わない）
-3. job相関は `job_id`
-4. 未知フィールドは無視
+3. 未知フィールドは無視
 
 ### 6.5 `result` と `error` の使い分け
 1. `result(status=error)` は「実行開始後のtool実行エラー」に使用
@@ -228,32 +218,8 @@ Plugin:
 3. 受信応答が上限超過だった場合は `ERR_INVALID_RESPONSE` として扱う
 
 ### 6.7 capability tool metadata
-1. `capability.tools[]` は少なくとも `name/execution_mode/supports_cancel/default_timeout_ms/max_timeout_ms/requires_client_request_id` を含む。
+1. `capability.tools[]` は少なくとも `name/default_timeout_ms/max_timeout_ms/requires_client_request_id` を含む。
 2. `execution_error_retryable` は予約フィールドとして任意送信可（現在は判定に使わない）。
-
-### 6.8 Job Long Polling
-不要なポーリングラウンドトリップを削減するため、`submit_job` と `wait_job` は Plugin 側で最大 `job_long_poll_ms`（5秒）待機する。
-
-#### `submit_job` の待機
-1. Server は `submit_job` メッセージに `wait_ms` フィールドを含める。
-2. Plugin は job submit 後、`wait_ms` ミリ秒まで終端状態への遷移を待機する。
-3. 待機中に job が終端状態に遷移した場合は即座に応答する。
-4. `submit_job_result` に `state` と `result` フィールドを追加で含める。
-5. `state` が終端（`succeeded`/`failed`/`cancelled`/`timeout`）の場合、`result` にテスト結果を含む。
-6. これにより、高速なテストは `run_tests` 1 回の呼び出しで結果まで取得できる。
-
-#### `wait_job`（新規メッセージ）
-1. MCP `manage_job(wait)` から発行される。
-2. Server → Plugin: `{ type: "wait_job", request_id, job_id, wait_ms }`
-3. Plugin は `wait_ms` ミリ秒まで終端状態への遷移を待機する。
-4. Plugin → Server: 既存 `job_status` と同形式で応答: `{ type: "job_status", request_id, job_id, state, progress, result }`
-5. 未知 `job_id` は `ERR_JOB_NOT_FOUND`。
-
-#### 待機の実装
-1. Plugin 側で `TaskCompletionSource` を使用し、job が終端状態に遷移したときに signal する。
-2. `Task.WhenAny(TerminalTcs.Task, Task.Delay(waitMs, cancellationToken))` で待機とタイムアウトを制御する。
-3. Server 側の `SendRequestAsync` タイムアウトは `defaultMs + JobLongPollMs` に延長する。
-4. `RequestScheduler` は待機中ブロックされるが、MCP クライアントはポーリング中に並行リクエストを送らないため実害なし。
 
 ## 7. 実行モデル
 ### 7.1 Request状態
@@ -263,22 +229,15 @@ Plugin:
 4. `running`
 5. `succeeded|failed|timeout|cancelled`
 
-### 7.2 Job状態
-1. `queued`
-2. `running`
-3. `succeeded|failed|timeout|cancelled`
-
-### 7.3 並列実行
+### 7.2 並列実行
 1. Unity往復要求の同時実行数は `1`
 2. キュー上限は `32`
-3. `manage_job` を含む全要求を同一キューで処理する
+3. 全要求を同一キューで処理する
 4. 状態更新は単一直列化コンテキストで処理し、mutex分岐は採用しない
 
-### 7.4 raceルール
+### 7.3 raceルール
 1. 終端状態はCASで1回のみ確定
-2. `running` 中の `manage_job(cancel)` は常に `cancel_requested` を返す（`supports_cancel=true` の場合はUnityへ `cancel` を転送）
-3. 終端済み対象への `manage_job(cancel)` は `rejected` を返す
-4. 同一 `request_id` の後着 `result/error` はログのみで破棄する
+2. 同一 `request_id` の後着 `result/error` はログのみで破棄する
 
 ## 8. エラー契約
 ### 8.1 error envelope
@@ -304,12 +263,7 @@ Rules:
 2. 接続/待機: `ERR_EDITOR_NOT_READY`, `ERR_UNITY_DISCONNECTED`, `ERR_RECONNECT_TIMEOUT`, `ERR_COMPILE_TIMEOUT`
 3. 実行: `ERR_REQUEST_TIMEOUT`, `ERR_UNITY_EXECUTION`, `ERR_INVALID_RESPONSE`
 4. キュー: `ERR_QUEUE_FULL`
-5. job/cancel: `ERR_JOB_NOT_FOUND`, `ERR_CANCEL_NOT_SUPPORTED`, `ERR_CANCEL_REJECTED`
-6. 再設定: `ERR_RECONFIG_IN_PROGRESS`
-
-補足:
-1. `ERR_CANCEL_NOT_SUPPORTED` は対象種別がcancel契約外の場合のみ使用する。
-2. `supports_cancel=false` の既知対象は `cancel_requested` を返す。
+5. 再設定: `ERR_RECONFIG_IN_PROGRESS`
 
 ### 8.3 再試行ルール
 1. `ERR_QUEUE_FULL` は指数バックオフ（例: 200ms開始、上限2000ms）で再試行する。
@@ -331,13 +285,12 @@ Rules:
 8. `compile_grace_timeout_ms = 90000`
 9. `queue_max_size = 32`
 10. `max_message_bytes = 1048576`
-11. `job_long_poll_ms = 5000`
-12. `mcp_http_path = /mcp`
+11. `mcp_http_path = /mcp`
 13. `unity_ws_path = /unity`
 
 ## 10. ログ要件
 1. すべての要求に `request_id`
-2. 存在時 `client_request_id` / `job_id`
+2. 存在時 `client_request_id`
 3. 接続ログには `connection_id`, `editor_instance_id`, `plugin_session_id`, `connect_attempt_seq` を付与する。
 4. 主要状態遷移ログ
    - `booting -> waiting_editor -> ready`
@@ -354,19 +307,14 @@ Rules:
 1. `waiting_editor` 待機成功/失敗
 2. `read_console` 正常取得
 3. `get_editor_state` 状態反映
-4. `run_tests` submit->status->完了
-5. `run_tests` が5秒以内に完了するテストで結果を直接返す
-6. `manage_job(wait)` で非終端状態時に最大5秒待機し、完了時に即座に返す
-7. `manage_job(cancel)` (`cancelled|cancel_requested|rejected`)
-6. compile/reload中の待機復帰
+4. `run_tests` 同期実行で結果が直接返る
+5. compile/reload中の待機復帰
 7. `POST /mcp` で initialize/listTools/callTool が成功
 8. 同一port上で `/mcp` と `/unity` が共存動作
 9. 既存 `active` セッション中に2つ目のEditorが `hello` を送信した場合、2つ目は拒否され、Pluginのユーザー向け案内ログが1回だけ出る。
 
 ## 12. 実装チェックリスト
-1. `waiting_editor` 超過時に `job_id` を発行していない
-2. `cancel` 競合で終端状態が二重確定しない
-3. `ERR_*` と `code/message` の返却契約が一致している
+1. `ERR_*` と `code/message` の返却契約が一致している
 4. 設定不正時に必ず起動停止する
 5. `http://127.0.0.1:{port}/mcp` でMCP登録・呼び出し可能
 6. `ws://127.0.0.1:{port}/unity` でUnity接続可能
@@ -374,5 +322,4 @@ Rules:
 ## 13. 未実装事項
 1. `client_request_id` のサーバー側dedupe（未完了重複拒否、完了結果再利用、TTL管理）。
 2. dedupe有効化時の `ERR_DUPLICATE_REQUEST` 復帰と `retryable/execution_guarantee` 対応表の更新。
-3. `manage_job` のキューバイパス最適化（必要時のみ）。
-4. 厳密エラー契約（tool単位 `execution_error_retryable` / `execution_guarantee` マトリクス）。
+3. 厳密エラー契約（tool単位 `execution_error_retryable` / `execution_guarantee` マトリクス）。

@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
+using UnityEditor.TestTools.TestRunner.Api;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityMcpPlugin.Tools;
@@ -13,6 +15,9 @@ namespace UnityMcpPlugin
 {
     internal sealed class CommandExecutor
     {
+        private const int DefaultRunTestsTimeoutMs = 300_000;
+        private const int RetrieveTestListTimeoutMs = 5_000;
+
         private readonly Func<EditorSnapshot> _snapshotProvider;
 
         internal CommandExecutor(Func<EditorSnapshot> snapshotProvider)
@@ -240,6 +245,26 @@ namespace UnityMcpPlugin
             if (string.Equals(toolName, ToolNames.CaptureScreenshot, StringComparison.Ordinal))
             {
                 return await MainThreadDispatcher.InvokeAsync(() => CaptureScreenshotTool.Execute(parameters));
+            }
+
+            if (string.Equals(toolName, ToolNames.RunTests, StringComparison.Ordinal))
+            {
+                var mode = Payload.GetString(parameters, "mode") ?? RunTestsModes.All;
+                if (!RunTestsModes.IsSupported(mode))
+                {
+                    throw new PluginException(
+                        "ERR_INVALID_PARAMS",
+                        $"mode must be {RunTestsModes.All}|{RunTestsModes.Edit}|{RunTestsModes.Play}");
+                }
+
+                var filter = Payload.GetString(parameters, "filter") ?? string.Empty;
+                var timeoutMs = Payload.GetInt(parameters, "timeout_ms");
+                if (!timeoutMs.HasValue || timeoutMs.Value <= 0)
+                {
+                    timeoutMs = DefaultRunTestsTimeoutMs;
+                }
+
+                return await ExecuteRunTestsAsync(mode, filter, timeoutMs.Value);
             }
 
             throw new PluginException("ERR_UNKNOWN_COMMAND", $"unsupported tool: {toolName}");
@@ -629,6 +654,264 @@ namespace UnityMcpPlugin
 
             clearMethod.Invoke(null, null);
             return true;
+        }
+
+        private async Task<RunTestsJobResult> ExecuteRunTestsAsync(string mode, string filter, int timeoutMs)
+        {
+            using var cts = new CancellationTokenSource(timeoutMs);
+            var cancellationToken = cts.Token;
+
+            try
+            {
+                var aggregate = new RunAggregation(mode, filter);
+
+                if (string.Equals(mode, RunTestsModes.All, StringComparison.Ordinal))
+                {
+                    await RunSingleModeAsync(TestMode.EditMode, filter, aggregate, cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await RunSingleModeAsync(TestMode.PlayMode, filter, aggregate, cancellationToken);
+                }
+                else
+                {
+                    var testMode = string.Equals(mode, RunTestsModes.Play, StringComparison.Ordinal)
+                        ? TestMode.PlayMode
+                        : TestMode.EditMode;
+                    await RunSingleModeAsync(testMode, filter, aggregate, cancellationToken);
+                }
+
+                return aggregate.ToResult();
+            }
+            catch (OperationCanceledException)
+            {
+                throw new PluginException("ERR_TIMEOUT", "run_tests timed out");
+            }
+            catch (PluginException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return BuildExceptionResult(mode, filter, ex);
+            }
+        }
+
+        private static async Task RunSingleModeAsync(
+            TestMode testMode,
+            string filter,
+            RunAggregation aggregate,
+            CancellationToken cancellationToken)
+        {
+            // Pre-check: retrieve test list and skip Execute if no leaf tests exist.
+            // TestRunnerApi.Execute() never fires RunFinished when there are no tests,
+            // causing the request to hang forever.
+            var testListTcs = new TaskCompletionSource<ITestAdaptor>(TaskCreationOptions.RunContinuationsAsynchronously);
+            TestRunnerApi preCheckApi = null;
+
+            await MainThreadDispatcher.InvokeAsync(() =>
+            {
+                preCheckApi = ScriptableObject.CreateInstance<TestRunnerApi>();
+                preCheckApi.RetrieveTestList(testMode, root => testListTcs.TrySetResult(root));
+                return true;
+            });
+
+            using var preCheckCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            preCheckCts.CancelAfter(RetrieveTestListTimeoutMs);
+
+            var preCheckCancel = Task.Delay(Timeout.Infinite, preCheckCts.Token);
+            var preCheckCompleted = await Task.WhenAny(testListTcs.Task, preCheckCancel);
+
+            await MainThreadDispatcher.InvokeAsync(() =>
+            {
+                if (preCheckApi != null) UnityEngine.Object.DestroyImmediate(preCheckApi);
+                return true;
+            });
+
+            if (!ReferenceEquals(preCheckCompleted, testListTcs.Task))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return;
+            }
+
+            var testRoot = await testListTcs.Task;
+            if (!HasLeafTests(testRoot))
+            {
+                return;
+            }
+
+            // Actual test execution
+            var completion = new TaskCompletionSource<ITestResultAdaptor>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var callback = new RunCallback(completion);
+            TestRunnerApi testApi = null;
+
+            var runGuid = await MainThreadDispatcher.InvokeAsync(() =>
+            {
+                testApi = ScriptableObject.CreateInstance<TestRunnerApi>();
+                testApi.RegisterCallbacks(callback);
+
+                var testFilter = new Filter
+                {
+                    testMode = testMode,
+                };
+
+                if (!string.IsNullOrWhiteSpace(filter))
+                {
+                    testFilter.testNames = new[] { filter };
+                }
+
+                var settings = new ExecutionSettings(testFilter)
+                {
+                    runSynchronously = false,
+                };
+
+                var guid = testApi.Execute(settings);
+                return guid;
+            });
+
+            using var registration = cancellationToken.Register(() => RequestCancelRun(runGuid));
+
+            ITestResultAdaptor root;
+            try
+            {
+                var canceledRun = Task.Delay(Timeout.Infinite, cancellationToken);
+                var completedRun = await Task.WhenAny(completion.Task, canceledRun);
+                if (!ReferenceEquals(completedRun, completion.Task))
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
+                root = await completion.Task;
+            }
+            finally
+            {
+                await MainThreadDispatcher.InvokeAsync(() =>
+                {
+                    TestRunnerApi.UnregisterTestCallback(callback);
+                    if (testApi != null)
+                    {
+                        UnityEngine.Object.DestroyImmediate(testApi);
+                    }
+
+                    return true;
+                });
+            }
+
+            MergeRunResult(root, aggregate);
+        }
+
+        private static bool HasLeafTests(ITestAdaptor node)
+        {
+            if (node == null) return false;
+            if (!node.IsSuite) return true;
+            if (node.Children == null) return false;
+
+            foreach (var child in node.Children)
+            {
+                if (HasLeafTests(child)) return true;
+            }
+
+            return false;
+        }
+
+        private static void RequestCancelRun(string runGuid)
+        {
+            if (string.IsNullOrEmpty(runGuid)) return;
+            _ = MainThreadDispatcher.InvokeAsync(() => TestRunnerApi.CancelTestRun(runGuid));
+        }
+
+        private static void MergeRunResult(ITestResultAdaptor result, RunAggregation aggregate)
+        {
+            aggregate.Total += result.PassCount + result.FailCount + result.SkipCount + result.InconclusiveCount;
+            aggregate.Passed += result.PassCount;
+            aggregate.Failed += result.FailCount;
+            aggregate.Skipped += result.SkipCount + result.InconclusiveCount;
+            aggregate.DurationMs += (int)Math.Round(result.Duration * 1000.0, MidpointRounding.AwayFromZero);
+
+            CollectFailedLeafResults(result, aggregate.FailedTests);
+        }
+
+        private static void CollectFailedLeafResults(ITestResultAdaptor result, List<FailedTest> failures)
+        {
+            if (result == null) return;
+
+            if (result.HasChildren)
+            {
+                foreach (var child in result.Children)
+                {
+                    CollectFailedLeafResults(child, failures);
+                }
+
+                return;
+            }
+
+            if (result.TestStatus != TestStatus.Failed) return;
+
+            failures.Add(new FailedTest(
+                result.FullName ?? result.Name ?? "unknown",
+                result.Message ?? string.Empty,
+                result.StackTrace ?? string.Empty));
+        }
+
+        private static RunTestsJobResult BuildExceptionResult(string mode, string filter, Exception ex)
+        {
+            return new RunTestsJobResult(
+                new TestSummary(1, 0, 1, 0, 0),
+                new List<FailedTest>
+                {
+                    new FailedTest(
+                        "run_tests",
+                        ex.Message,
+                        ex.StackTrace ?? string.Empty),
+                },
+                mode,
+                filter);
+        }
+
+        private sealed class RunAggregation
+        {
+            internal RunAggregation(string mode, string filter)
+            {
+                Mode = mode;
+                Filter = filter;
+            }
+
+            internal string Mode { get; }
+            internal string Filter { get; }
+            internal int Total { get; set; }
+            internal int Passed { get; set; }
+            internal int Failed { get; set; }
+            internal int Skipped { get; set; }
+            internal int DurationMs { get; set; }
+            internal List<FailedTest> FailedTests { get; } = new();
+
+            internal RunTestsJobResult ToResult()
+            {
+                return new RunTestsJobResult(
+                    new TestSummary(Total, Passed, Failed, Skipped, DurationMs),
+                    FailedTests,
+                    Mode,
+                    Filter);
+            }
+        }
+
+        private sealed class RunCallback : ICallbacks
+        {
+            internal RunCallback(TaskCompletionSource<ITestResultAdaptor> completion)
+            {
+                Completion = completion;
+            }
+
+            internal TaskCompletionSource<ITestResultAdaptor> Completion { get; }
+
+            public void RunStarted(ITestAdaptor testsToRun) { }
+
+            public void RunFinished(ITestResultAdaptor result)
+            {
+                Completion.TrySetResult(result);
+            }
+
+            public void TestStarted(ITestAdaptor test) { }
+
+            public void TestFinished(ITestResultAdaptor result) { }
         }
     }
 }

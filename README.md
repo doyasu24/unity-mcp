@@ -20,8 +20,7 @@ graph LR
 | `read_console` | Reads Unity console entries. |
 | `clear_console` | Clears Unity Console log entries. |
 | `refresh_assets` | Refreshes Unity Editor assets. |
-| `run_tests` | Starts Unity tests as a cancellable job. |
-| `manage_job` | Checks state/result or requests cancellation of a submitted test job. |
+| `run_tests` | Runs Unity tests and returns the result. |
 | **Scene Management** | |
 | `list_scenes` | Lists all scene files in the Unity project. |
 | `open_scene` | Opens a scene in the Unity Editor. |
