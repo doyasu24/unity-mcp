@@ -182,8 +182,19 @@ internal sealed class UnityBridge
         {
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RefreshAssets);
-            var payload = await ExecuteSyncToolAsync(ToolNames.RefreshAssets, new JsonObject(), timeoutMs, token);
-            return new RefreshAssetsResult(payload);
+            try
+            {
+                var payload = await ExecuteSyncToolAsync(ToolNames.RefreshAssets, new JsonObject(), timeoutMs, token);
+                return new RefreshAssetsResult(payload);
+            }
+            catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+            {
+                // Assembly reload after script compilation disconnects the Plugin before
+                // the response arrives. Wait for the Editor to reconnect and return success
+                // since the refresh was executed.
+                await EnsureEditorReadyAsync(token);
+                return new RefreshAssetsResult(new JsonObject { ["refreshed"] = true });
+            }
         }, cancellationToken);
     }
 

@@ -94,8 +94,8 @@ internal static class ToolCatalog
             EmptyObjectSchema()),
         [ToolNames.RefreshAssets] = new(
             ToolNames.RefreshAssets,
-            30000,
             120000,
+            300000,
             false,
             "Refreshes Unity Editor assets.",
             EmptyObjectSchema()),

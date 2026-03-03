@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
+using UnityEditor.Compilation;
 using UnityEditor.SceneManagement;
 using UnityEditor.TestTools.TestRunner.Api;
 using UnityEngine;
@@ -120,12 +121,44 @@ namespace UnityMcpPlugin
 
             if (string.Equals(toolName, ToolNames.RefreshAssets, StringComparison.Ordinal))
             {
+                var compilationTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var compilationStarted = false;
+
+                Action<object> onStarted = _ => { compilationStarted = true; };
+                Action<object> onFinished = null;
+                onFinished = _ =>
+                {
+                    CompilationPipeline.compilationStarted -= onStarted;
+                    CompilationPipeline.compilationFinished -= onFinished;
+                    compilationTcs.TrySetResult(true);
+                };
+
                 await MainThreadDispatcher.InvokeAsync(() =>
                 {
-                    AssetDatabase.Refresh();
+                    CompilationPipeline.compilationStarted += onStarted;
+                    CompilationPipeline.compilationFinished += onFinished;
+                    try
+                    {
+                        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                    }
+                    catch
+                    {
+                        CompilationPipeline.compilationStarted -= onStarted;
+                        CompilationPipeline.compilationFinished -= onFinished;
+                        throw;
+                    }
+
+                    compilationStarted = compilationStarted || EditorApplication.isCompiling;
+                    if (!compilationStarted)
+                    {
+                        CompilationPipeline.compilationStarted -= onStarted;
+                        CompilationPipeline.compilationFinished -= onFinished;
+                        compilationTcs.TrySetResult(true);
+                    }
                     return true;
                 });
 
+                await compilationTcs.Task;
                 return new RefreshAssetsPayload(true);
             }
 
