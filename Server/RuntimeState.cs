@@ -17,6 +17,7 @@ internal enum EditorState
     Ready,
     Compiling,
     Reloading,
+    EnteringPlayMode,
 }
 
 internal enum WaitingReason
@@ -25,6 +26,7 @@ internal enum WaitingReason
     Reconnecting,
     Compiling,
     Reloading,
+    EnteringPlayMode,
 }
 
 internal static class WireState
@@ -45,6 +47,7 @@ internal static class WireState
         EditorState.Ready => "ready",
         EditorState.Compiling => "compiling",
         EditorState.Reloading => "reloading",
+        EditorState.EnteringPlayMode => "entering_play_mode",
         _ => "unknown",
     };
 
@@ -53,6 +56,7 @@ internal static class WireState
         "ready" => EditorState.Ready,
         "compiling" => EditorState.Compiling,
         "reloading" => EditorState.Reloading,
+        "entering_play_mode" => EditorState.EnteringPlayMode,
         _ => EditorState.Unknown,
     };
 
@@ -62,6 +66,7 @@ internal static class WireState
         WaitingReason.Reconnecting => "reconnecting",
         WaitingReason.Compiling => "compiling",
         WaitingReason.Reloading => "reloading",
+        WaitingReason.EnteringPlayMode => "entering_play_mode",
         _ => "reconnecting",
     };
 }
@@ -254,11 +259,12 @@ internal sealed class RuntimeState
             {
                 EditorState.Compiling => WaitingReason.Compiling,
                 EditorState.Reloading => WaitingReason.Reloading,
+                EditorState.EnteringPlayMode => WaitingReason.EnteringPlayMode,
                 _ => WaitingReason.None,
             };
         }
 
-        if (_waitingReason is WaitingReason.Compiling or WaitingReason.Reloading)
+        if (_waitingReason is WaitingReason.Compiling or WaitingReason.Reloading or WaitingReason.EnteringPlayMode)
         {
             var age = now - _lastEditorStateAtUtc;
             if (age <= TimeSpan.FromMilliseconds(Constants.CompileGraceTimeoutMs))
@@ -276,6 +282,7 @@ internal sealed class RuntimeState
         {
             EditorState.Compiling => WaitingReason.Compiling,
             EditorState.Reloading => WaitingReason.Reloading,
+            EditorState.EnteringPlayMode => WaitingReason.EnteringPlayMode,
             _ => WaitingReason.Reconnecting,
         };
 

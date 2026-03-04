@@ -133,6 +133,7 @@ Plugin:
 1. `ready`
 2. `compiling`
 3. `reloading`
+4. `entering_play_mode`
 
 ### 5.3 起動シーケンス
 1. Server起動
@@ -145,7 +146,7 @@ Plugin:
 ### 5.4 `waiting_editor` 受理ポリシー
 1. 要求は待機理由に応じて次の上限まで待機する。
    - `reconnecting`: `request_reconnect_wait_ms` (45000ms)
-   - `compiling|reloading`: `compile_grace_timeout_ms` (90000ms)
+   - `compiling|reloading|entering_play_mode`: `compile_grace_timeout_ms` (90000ms)
 2. 復帰成功時のみ実行
 3. 超過時は待機理由に応じたエラーを返す。
    - `reconnecting`: `ERR_EDITOR_NOT_READY`

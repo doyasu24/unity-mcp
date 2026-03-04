@@ -204,15 +204,34 @@ internal sealed class UnityBridge
         {
             await EnsureEditorReadyAsync(token);
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ControlPlayMode);
-            var payload = await ExecuteSyncToolAsync(
-                ToolNames.ControlPlayMode,
-                new JsonObject
+            try
+            {
+                var payload = await ExecuteSyncToolAsync(
+                    ToolNames.ControlPlayMode,
+                    new JsonObject
+                    {
+                        ["action"] = request.Action,
+                    },
+                    timeoutMs,
+                    token);
+                return new ControlPlayModeResult(payload);
+            }
+            catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout &&
+                                          string.Equals(request.Action, PlayModeActions.Start, StringComparison.Ordinal))
+            {
+                // Domain reload during play mode entry disconnects the Plugin before
+                // the response arrives. Wait for the Editor to reconnect and return success
+                // since the action was accepted.
+                await EnsureEditorReadyAsync(token);
+                return new ControlPlayModeResult(new JsonObject
                 {
                     ["action"] = request.Action,
-                },
-                timeoutMs,
-                token);
-            return new ControlPlayModeResult(payload);
+                    ["accepted"] = true,
+                    ["is_playing"] = true,
+                    ["is_paused"] = false,
+                    ["is_playing_or_will_change_playmode"] = true,
+                });
+            }
         }, cancellationToken);
     }
 
@@ -1355,7 +1374,7 @@ internal sealed class UnityBridge
 
     internal static EditorReadyWaitPolicy ResolveEditorReadyWaitPolicy(RuntimeSnapshot snapshot)
     {
-        if (snapshot.WaitingReason is "compiling" or "reloading")
+        if (snapshot.WaitingReason is "compiling" or "reloading" or "entering_play_mode")
         {
             return new EditorReadyWaitPolicy(
                 TimeSpan.FromMilliseconds(Constants.CompileGraceTimeoutMs),

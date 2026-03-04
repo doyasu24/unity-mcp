@@ -25,6 +25,19 @@ namespace UnityMcpPlugin
                 runtime.Shutdown();
             };
 
+            EditorApplication.playModeStateChanged += state =>
+            {
+                if (state == PlayModeStateChange.ExitingEditMode)
+                {
+                    runtime.PublishEditorState(EditorBridgeState.EnteringPlayMode);
+                }
+                else if (state == PlayModeStateChange.EnteredPlayMode
+                         || state == PlayModeStateChange.EnteredEditMode)
+                {
+                    runtime.PublishEditorState(EditorBridgeState.Ready);
+                }
+            };
+
             EditorApplication.delayCall += () =>
             {
                 PluginLogger.InitializeMainThreadState();

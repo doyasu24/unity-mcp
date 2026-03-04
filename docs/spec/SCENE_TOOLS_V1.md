@@ -301,7 +301,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
   "properties": {
     "root_path": {
       "type": "string",
-      "description": "Optional: hierarchy path of a root GameObject to start from. If omitted, returns the entire scene."
+      "description": "Hierarchy path of a root GameObject to start from. Omit for entire scene/Prefab."
     },
     "max_depth": {
       "type": "integer",
@@ -315,7 +315,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
       "minimum": 1,
       "maximum": 10000,
       "default": 1000,
-      "description": "Maximum number of GameObjects to include in the response. When exceeded, the response is truncated and 'truncated' is set to true. Use 'root_path' to drill into a specific subtree."
+      "description": "Maximum number of GameObjects to include. Response is truncated when exceeded. Use 'root_path' to drill into a subtree."
     },
     "offset": {
       "type": "integer",
@@ -326,7 +326,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
     "component_filter": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Only return GameObjects that have at least one of these component types. Matches Type.Name or Type.FullName (case-insensitive). In tree mode (offset=0), non-matching GOs keep structure but omit components. In flat mode (offset>0), non-matching GOs are excluded."
+      "description": "Filter to GameObjects with at least one of these component types (matches Type.Name or FullName, case-insensitive). Tree mode (offset=0): non-matching GOs keep structure but omit components. Flat mode (offset>0): non-matching GOs excluded."
     }
   },
   "additionalProperties": false
@@ -435,14 +435,14 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
     "fields": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Optional list of field names to return. When specified, only these fields are included in the response. When omitted, all serialized fields are returned."
+      "description": "Field names to return. Omit for all serialized fields."
     },
     "max_array_elements": {
       "type": "integer",
       "minimum": 0,
       "maximum": 64,
       "default": 16,
-      "description": "Maximum number of array/List elements to expand per field. Elements beyond this limit are truncated. 0 returns element count only."
+      "description": "Max array/List elements to expand per field. 0 returns element count only."
     }
   },
   "required": ["game_object_path", "index"],
@@ -507,20 +507,20 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
     "action": {
       "type": "string",
       "enum": ["add", "update", "remove", "move"],
-      "description": "Operation to perform. 'add': requires component_type. 'update': requires index and fields. 'remove': requires index. 'move': requires index and new_index."
+      "description": "Operation to perform. add: requires component_type. update: requires index+fields. remove: requires index. move: requires index+new_index."
     },
     "game_object_path": {
       "type": "string",
-      "description": "Scene hierarchy path of the target GameObject (e.g. \"/Canvas/Panel/Button\" or \"Main Camera\"). Root objects can omit the leading slash."
+      "description": "Hierarchy path of the target GameObject (e.g. \"/Canvas/Panel/Button\" or \"Main Camera\"). Root objects can omit the leading slash."
     },
     "component_type": {
       "type": "string",
-      "description": "Fully qualified or simple name of the component type to add (e.g. \"Rigidbody\", \"PlayerController\", \"UnityEngine.UI.Image\"). Required for 'add' action."
+      "description": "Component type name to add (e.g. \"Rigidbody\", \"UnityEngine.UI.Image\"). Required for 'add'."
     },
     "index": {
       "type": "integer",
       "minimum": 0,
-      "description": "0-based component index on the GameObject (matches get_hierarchy output). Required for 'update'/'remove'/'move' to identify the target component. Optional for 'add' to specify insertion position (must be >= 1 since index 0 is Transform; default: append to end)."
+      "description": "0-based component index (from get_hierarchy). Required for update/remove/move. Optional for add (insertion position, >= 1; default: append)."
     },
     "new_index": {
       "type": "integer",
@@ -529,7 +529,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
     },
     "fields": {
       "type": "object",
-      "description": "Key-value map of serialized field names to values. Applicable to 'add' and 'update' actions.",
+      "description": "Serialized field name-value map. For 'add' and 'update'.",
       "additionalProperties": true
     }
   },
@@ -605,7 +605,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
   "properties": {
     "name": {
       "type": "string",
-      "description": "Name filter (regex pattern, case-insensitive)."
+      "description": "Name filter (regex, case-insensitive)."
     },
     "tag": {
       "type": "string",
@@ -704,48 +704,48 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
     "action": {
       "type": "string",
       "enum": ["create", "update", "delete", "reparent"],
-      "description": "Operation to perform. 'create': creates a new GameObject. 'update': modifies name/tag/layer/active. 'delete': destroys the GameObject and all children. 'reparent': moves to a new parent."
+      "description": "Operation to perform. create: new GameObject. update: modify name/tag/layer/active. delete: destroy with children. reparent: move to new parent."
     },
     "game_object_path": {
       "type": "string",
-      "description": "Scene hierarchy path of the target GameObject. Required for update/delete/reparent."
+      "description": "Hierarchy path of the target GameObject. Required for update/delete/reparent."
     },
     "parent_path": {
       "type": "string",
-      "description": "Parent GameObject path. For create: optional (omit for scene root). For reparent: new parent path (omit or null for scene root)."
+      "description": "Parent path. create: omit for scene root. reparent: new parent (omit for root)."
     },
     "name": {
       "type": "string",
-      "description": "Name of the GameObject. Required for create. Optional for update (renames the GO)."
+      "description": "Name of the GameObject. Required for create. For update: renames."
     },
     "tag": {
       "type": "string",
-      "description": "Tag to assign. Optional for create/update."
+      "description": "Tag to assign. For create/update."
     },
     "layer": {
       "type": "integer",
       "minimum": 0,
       "maximum": 31,
-      "description": "Layer index (0-31). Optional for create/update."
+      "description": "Layer index. For create/update."
     },
     "active": {
       "type": "boolean",
-      "description": "Active state. Optional for create/update. Default: true for create."
+      "description": "Active state. For create/update. Default: true for create."
     },
     "primitive_type": {
       "type": "string",
       "enum": ["Cube", "Sphere", "Capsule", "Cylinder", "Plane", "Quad"],
-      "description": "Creates a Unity primitive. Optional for create only."
+      "description": "Creates a Unity primitive. For create only."
     },
     "world_position_stays": {
       "type": "boolean",
       "default": true,
-      "description": "Preserve world position during reparent. Optional for reparent."
+      "description": "Preserve world position during reparent."
     },
     "sibling_index": {
       "type": "integer",
       "minimum": 0,
-      "description": "Position among siblings. Optional for create/reparent."
+      "description": "Position among siblings. For create/reparent."
     }
   },
   "required": ["action"],

@@ -8,6 +8,7 @@ namespace UnityMcpPlugin
         Ready,
         Compiling,
         Reloading,
+        EnteringPlayMode,
     }
 
     internal enum PortReconfigureStatus

@@ -29,12 +29,19 @@ public sealed class WireStateTests
     [InlineData("ready", "ready")]
     [InlineData("compiling", "compiling")]
     [InlineData("reloading", "reloading")]
+    [InlineData("entering_play_mode", "entering_play_mode")]
     [InlineData("unknown-value", "unknown")]
     [InlineData(null, "unknown")]
     public void ParseEditorState_MapsExpectedValue(string? wireState, string expectedWire)
     {
         var parsed = WireState.ParseEditorState(wireState);
         Assert.Equal(expectedWire, parsed.ToWire());
+    }
+
+    [Fact]
+    public void WaitingReason_EnteringPlayMode_ToWire_MapsExpectedValue()
+    {
+        Assert.Equal("entering_play_mode", WaitingReason.EnteringPlayMode.ToWire());
     }
 
 }

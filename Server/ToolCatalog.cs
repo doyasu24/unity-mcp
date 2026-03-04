@@ -97,7 +97,7 @@ internal static class ToolCatalog
             120000,
             300000,
             false,
-            "Refreshes Unity Editor assets.",
+            "Refreshes Unity Editor assets. Triggers recompilation if scripts changed and waits for completion.",
             EmptyObjectSchema()),
         [ToolNames.ControlPlayMode] = new(
             ToolNames.ControlPlayMode,
@@ -139,6 +139,7 @@ internal static class ToolCatalog
                     ["filter"] = new JsonObject
                     {
                         ["type"] = "string",
+                        ["description"] = "Test name filter passed to TestRunnerApi. Omit to run all tests.",
                     },
                 },
                 ["additionalProperties"] = false,
@@ -158,7 +159,7 @@ internal static class ToolCatalog
                     ["root_path"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "Optional: hierarchy path of a root GameObject to start from. If omitted, returns the entire scene or Prefab root.",
+                        ["description"] = "Hierarchy path of a root GameObject to start from. Omit for entire scene/Prefab.",
                     },
                     ["max_depth"] = new JsonObject
                     {
@@ -174,7 +175,7 @@ internal static class ToolCatalog
                         ["minimum"] = SceneToolLimits.MaxGameObjectsMin,
                         ["maximum"] = SceneToolLimits.MaxGameObjectsMax,
                         ["default"] = SceneToolLimits.MaxGameObjectsDefault,
-                        ["description"] = "Maximum number of GameObjects to include in the response. When exceeded, the response is truncated and 'truncated' is set to true. Use 'root_path' to drill into a specific subtree.",
+                        ["description"] = "Maximum number of GameObjects to include. Response is truncated when exceeded. Use 'root_path' to drill into a subtree.",
                     },
                     ["offset"] = new JsonObject
                     {
@@ -187,7 +188,7 @@ internal static class ToolCatalog
                     {
                         ["type"] = "array",
                         ["items"] = new JsonObject { ["type"] = "string" },
-                        ["description"] = "Only return GameObjects that have at least one of these component types. Matches Type.Name or Type.FullName (case-insensitive). In tree mode (offset=0), non-matching GOs keep structure but omit components. In flat mode (offset>0), non-matching GOs are excluded.",
+                        ["description"] = "Filter to GameObjects with at least one of these component types (matches Type.Name or FullName, case-insensitive). Tree mode (offset=0): non-matching GOs keep structure but omit components. Flat mode (offset>0): non-matching GOs excluded.",
                     },
                 },
                 ["additionalProperties"] = false,
@@ -219,7 +220,7 @@ internal static class ToolCatalog
                     {
                         ["type"] = "array",
                         ["items"] = new JsonObject { ["type"] = "string" },
-                        ["description"] = "Optional list of field names to return. When specified, only these fields are included in the response. When omitted, all serialized fields are returned.",
+                        ["description"] = "Field names to return. Omit for all serialized fields.",
                     },
                     ["max_array_elements"] = new JsonObject
                     {
@@ -227,7 +228,7 @@ internal static class ToolCatalog
                         ["minimum"] = SceneToolLimits.MaxArrayElementsMin,
                         ["maximum"] = SceneToolLimits.MaxArrayElementsMax,
                         ["default"] = SceneToolLimits.MaxArrayElementsDefault,
-                        ["description"] = "Maximum number of array/List elements to expand per field. Elements beyond this limit are truncated. 0 returns element count only.",
+                        ["description"] = "Max array/List elements to expand per field. 0 returns element count only.",
                     },
                 },
                 ["required"] = new JsonArray("game_object_path", "index"),
@@ -249,7 +250,7 @@ internal static class ToolCatalog
                     {
                         ["type"] = "string",
                         ["enum"] = ManageActions.ToJsonArray(),
-                        ["description"] = "Operation to perform. 'add': requires component_type. 'update': requires index and fields. 'remove': requires index. 'move': requires index and new_index.",
+                        ["description"] = "Operation to perform. add: requires component_type. update: requires index+fields. remove: requires index. move: requires index+new_index.",
                     },
                     ["game_object_path"] = new JsonObject
                     {
@@ -259,13 +260,13 @@ internal static class ToolCatalog
                     ["component_type"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "Fully qualified or simple name of the component type to add (e.g. \"Rigidbody\", \"PlayerController\", \"UnityEngine.UI.Image\"). Required for 'add' action.",
+                        ["description"] = "Component type name to add (e.g. \"Rigidbody\", \"UnityEngine.UI.Image\"). Required for 'add'.",
                     },
                     ["index"] = new JsonObject
                     {
                         ["type"] = "integer",
                         ["minimum"] = 0,
-                        ["description"] = "0-based component index on the GameObject (matches get_hierarchy output). Required for 'update'/'remove'/'move' to identify the target component. Optional for 'add' to specify insertion position (must be >= 1 since index 0 is Transform; default: append to end).",
+                        ["description"] = "0-based component index (from get_hierarchy). Required for update/remove/move. Optional for add (insertion position, >= 1; default: append).",
                     },
                     ["new_index"] = new JsonObject
                     {
@@ -276,7 +277,7 @@ internal static class ToolCatalog
                     ["fields"] = new JsonObject
                     {
                         ["type"] = "object",
-                        ["description"] = "Key-value map of serialized field names to values. Applicable to 'add' and 'update' actions.",
+                        ["description"] = "Serialized field name-value map. For 'add' and 'update'.",
                         ["additionalProperties"] = true,
                     },
                 },
@@ -410,7 +411,7 @@ internal static class ToolCatalog
                     {
                         ["type"] = "array",
                         ["items"] = new JsonObject { ["type"] = "string" },
-                        ["description"] = "Optional list of folder paths to limit the search scope (e.g. [\"Assets/Prefabs\"]).",
+                        ["description"] = "Folder paths to limit search scope (e.g. [\"Assets/Prefabs\"]).",
                     },
                     ["max_results"] = new JsonObject
                     {
@@ -446,7 +447,7 @@ internal static class ToolCatalog
                     ["name"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "Name filter (regex pattern, case-insensitive).",
+                        ["description"] = "Name filter (regex, case-insensitive).",
                     },
                     ["tag"] = new JsonObject
                     {
@@ -589,7 +590,7 @@ internal static class ToolCatalog
                     {
                         ["type"] = "string",
                         ["enum"] = GameObjectActions.ToJsonArray(),
-                        ["description"] = "Operation to perform. 'create': creates a new GameObject. 'update': modifies name/tag/layer/active. 'delete': destroys the GameObject and all children. 'reparent': moves to a new parent.",
+                        ["description"] = "Operation to perform. create: new GameObject. update: modify name/tag/layer/active. delete: destroy with children. reparent: move to new parent.",
                     },
                     ["game_object_path"] = new JsonObject
                     {
@@ -599,47 +600,47 @@ internal static class ToolCatalog
                     ["parent_path"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "Parent GameObject path. For create: optional (omit for root). For reparent: new parent path (omit or null for root).",
+                        ["description"] = "Parent path. create: omit for scene root. reparent: new parent (omit for root).",
                     },
                     ["name"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "Name of the GameObject. Required for create. Optional for update (renames the GO).",
+                        ["description"] = "Name of the GameObject. Required for create. For update: renames.",
                     },
                     ["tag"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "Tag to assign. Optional for create/update.",
+                        ["description"] = "Tag to assign. For create/update.",
                     },
                     ["layer"] = new JsonObject
                     {
                         ["type"] = "integer",
                         ["minimum"] = 0,
                         ["maximum"] = 31,
-                        ["description"] = "Layer index (0-31). Optional for create/update.",
+                        ["description"] = "Layer index. For create/update.",
                     },
                     ["active"] = new JsonObject
                     {
                         ["type"] = "boolean",
-                        ["description"] = "Active state. Optional for create/update. Default: true for create.",
+                        ["description"] = "Active state. For create/update. Default: true for create.",
                     },
                     ["primitive_type"] = new JsonObject
                     {
                         ["type"] = "string",
                         ["enum"] = PrimitiveTypes.ToJsonArray(),
-                        ["description"] = "Creates a Unity primitive. Optional for create only.",
+                        ["description"] = "Creates a Unity primitive. For create only.",
                     },
                     ["world_position_stays"] = new JsonObject
                     {
                         ["type"] = "boolean",
                         ["default"] = true,
-                        ["description"] = "Preserve world position during reparent. Optional for reparent.",
+                        ["description"] = "Preserve world position during reparent.",
                     },
                     ["sibling_index"] = new JsonObject
                     {
                         ["type"] = "integer",
                         ["minimum"] = 0,
-                        ["description"] = "Position among siblings. Optional for create/reparent.",
+                        ["description"] = "Position among siblings. For create/reparent.",
                     },
                 },
                 ["required"] = new JsonArray("action"),
@@ -650,7 +651,7 @@ internal static class ToolCatalog
             15000,
             30000,
             false,
-            "Creates or deletes Unity assets (materials, folders, physic materials, animator controllers, render textures). Also manages material properties: get/set shader properties, change shaders, and control shader keywords.",
+            "Manages Unity assets: create/delete (materials, folders, physic materials, animator controllers, render textures) and material operations (get/set properties, shaders, keywords).",
             new JsonObject
             {
                 ["type"] = "object",
@@ -660,7 +661,7 @@ internal static class ToolCatalog
                     {
                         ["type"] = "string",
                         ["enum"] = ManageAssetActions.ToJsonArray(),
-                        ["description"] = "Operation to perform. 'create': requires asset_type. 'delete': removes the asset. 'get_properties'/'set_properties'/'set_shader'/'get_keywords'/'set_keywords': material operations.",
+                        ["description"] = "Operation to perform. create: requires asset_type. delete: removes the asset. get_properties/set_properties/set_shader/get_keywords/set_keywords: material operations.",
                     },
                     ["asset_path"] = new JsonObject
                     {
@@ -677,7 +678,7 @@ internal static class ToolCatalog
                     {
                         ["type"] = "object",
                         ["additionalProperties"] = true,
-                        ["description"] = "Type-specific settings for 'create' (Material: { shader_name }, RenderTexture: { width, height, depth }). Property name-value map for 'set_properties'.",
+                        ["description"] = "For create: type-specific settings (Material: {shader_name}, RenderTexture: {width, height, depth}). For set_properties: property name-value map.",
                     },
                     ["overwrite"] = new JsonObject
                     {
@@ -711,7 +712,7 @@ internal static class ToolCatalog
             15000,
             60000,
             false,
-            "Captures a screenshot from Game View or Scene View and saves it as a PNG file.",
+            "Captures a screenshot from Game View or Scene View and saves it as a PNG file and returns it inline when possible.",
             new JsonObject
             {
                 ["type"] = "object",
@@ -743,7 +744,7 @@ internal static class ToolCatalog
                     ["camera_path"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "Scene hierarchy path of a Camera to use (game_view only). Defaults to Camera.main.",
+                        ["description"] = "Camera hierarchy path (game_view only). Defaults to Camera.main.",
                     },
                     ["output_path"] = new JsonObject
                     {
@@ -758,7 +759,7 @@ internal static class ToolCatalog
             120000,
             600000,
             false,
-            "Executes multiple tool calls in a single request. Reduces round-trips for batch operations. Supports atomic mode with Unity Undo (best-effort).",
+            "Executes multiple tool calls in a single request. Reduces round-trips. Supports atomic mode with Unity Undo (best-effort).",
             new JsonObject
             {
                 ["type"] = "object",
@@ -791,11 +792,13 @@ internal static class ToolCatalog
                     {
                         ["type"] = "boolean",
                         ["default"] = true,
+                        ["description"] = "Stop executing remaining operations on first error.",
                     },
                     ["atomic"] = new JsonObject
                     {
                         ["type"] = "boolean",
                         ["default"] = false,
+                        ["description"] = "Wrap in Unity Undo group for rollback on failure (best-effort).",
                     },
                 },
                 ["required"] = new JsonArray("operations"),

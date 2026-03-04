@@ -40,7 +40,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
     "search_in_folders": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Optional list of folder paths to limit the search scope (e.g. [\"Assets/Prefabs\"])."
+      "description": "Folder paths to limit search scope (e.g. [\"Assets/Prefabs\"])."
     },
     "max_results": {
       "type": "integer",
@@ -187,7 +187,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
     "action": {
       "type": "string",
       "enum": ["create", "delete", "get_properties", "set_properties", "set_shader", "get_keywords", "set_keywords"],
-      "description": "Operation to perform. 'create': requires asset_type. 'delete': removes the asset. 'get_properties'/'set_properties'/'set_shader'/'get_keywords'/'set_keywords': material operations."
+      "description": "Operation to perform. create: requires asset_type. delete: removes the asset. get_properties/set_properties/set_shader/get_keywords/set_keywords: material operations."
     },
     "asset_path": {
       "type": "string",
@@ -201,7 +201,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
     "properties": {
       "type": "object",
       "additionalProperties": true,
-      "description": "Type-specific settings for 'create' (Material: { shader_name }, RenderTexture: { width, height, depth }). Property name-value map for 'set_properties'."
+      "description": "For create: type-specific settings (Material: {shader_name}, RenderTexture: {width, height, depth}). For set_properties: property name-value map."
     },
     "overwrite": {
       "type": "boolean",

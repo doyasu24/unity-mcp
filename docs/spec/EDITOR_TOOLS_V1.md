@@ -43,7 +43,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 ```json
 {
   "server_state": "waiting_editor|ready|stopping|stopped",
-  "editor_state": "unknown|ready|compiling|reloading",
+  "editor_state": "unknown|ready|compiling|reloading|entering_play_mode",
   "connected": true,
   "last_editor_status_seq": 42
 }
@@ -401,7 +401,8 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
       "default": "all"
     },
     "filter": {
-      "type": "string"
+      "type": "string",
+      "description": "Test name filter passed to TestRunnerApi. Omit to run all tests."
     }
   },
   "additionalProperties": false
@@ -481,7 +482,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
     },
     "camera_path": {
       "type": "string",
-      "description": "Scene hierarchy path of a Camera to use (game_view only). Defaults to Camera.main."
+      "description": "Camera hierarchy path (game_view only). Defaults to Camera.main."
     },
     "output_path": {
       "type": "string",
@@ -561,8 +562,8 @@ Server から MCP クライアントへのエラー契約は `ERR_UNITY_EXECUTIO
 | `operations` | array | Yes | — | 実行するツール操作の配列（1〜50要素） |
 | `operations[].tool_name` | string | Yes | — | 実行するツール名（MCP統一名を使用可） |
 | `operations[].arguments` | object | No | `{}` | ツールの引数 |
-| `stop_on_error` | boolean | No | `true` | `true` の場合、エラー発生時に後続操作をスキップ |
-| `atomic` | boolean | No | `false` | `true` の場合、Unity Undo グループでラップ（ベストエフォート） |
+| `stop_on_error` | boolean | No | `true` | Stop executing remaining operations on first error. |
+| `atomic` | boolean | No | `false` | Wrap in Unity Undo group for rollback on failure (best-effort). |
 
 ### 出力仕様
 
