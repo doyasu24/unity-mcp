@@ -18,6 +18,7 @@ internal enum EditorState
     Compiling,
     Reloading,
     EnteringPlayMode,
+    ExitingPlayMode,
 }
 
 internal enum WaitingReason
@@ -27,6 +28,7 @@ internal enum WaitingReason
     Compiling,
     Reloading,
     EnteringPlayMode,
+    ExitingPlayMode,
 }
 
 internal static class WireState
@@ -48,6 +50,7 @@ internal static class WireState
         EditorState.Compiling => "compiling",
         EditorState.Reloading => "reloading",
         EditorState.EnteringPlayMode => "entering_play_mode",
+        EditorState.ExitingPlayMode => "exiting_play_mode",
         _ => "unknown",
     };
 
@@ -57,6 +60,7 @@ internal static class WireState
         "compiling" => EditorState.Compiling,
         "reloading" => EditorState.Reloading,
         "entering_play_mode" => EditorState.EnteringPlayMode,
+        "exiting_play_mode" => EditorState.ExitingPlayMode,
         _ => EditorState.Unknown,
     };
 
@@ -67,6 +71,7 @@ internal static class WireState
         WaitingReason.Compiling => "compiling",
         WaitingReason.Reloading => "reloading",
         WaitingReason.EnteringPlayMode => "entering_play_mode",
+        WaitingReason.ExitingPlayMode => "exiting_play_mode",
         _ => "reconnecting",
     };
 }
@@ -260,11 +265,12 @@ internal sealed class RuntimeState
                 EditorState.Compiling => WaitingReason.Compiling,
                 EditorState.Reloading => WaitingReason.Reloading,
                 EditorState.EnteringPlayMode => WaitingReason.EnteringPlayMode,
+                EditorState.ExitingPlayMode => WaitingReason.ExitingPlayMode,
                 _ => WaitingReason.None,
             };
         }
 
-        if (_waitingReason is WaitingReason.Compiling or WaitingReason.Reloading or WaitingReason.EnteringPlayMode)
+        if (_waitingReason is WaitingReason.Compiling or WaitingReason.Reloading or WaitingReason.EnteringPlayMode or WaitingReason.ExitingPlayMode)
         {
             var age = now - _lastEditorStateAtUtc;
             if (age <= TimeSpan.FromMilliseconds(Constants.CompileGraceTimeoutMs))
@@ -283,6 +289,7 @@ internal sealed class RuntimeState
             EditorState.Compiling => WaitingReason.Compiling,
             EditorState.Reloading => WaitingReason.Reloading,
             EditorState.EnteringPlayMode => WaitingReason.EnteringPlayMode,
+            EditorState.ExitingPlayMode => WaitingReason.ExitingPlayMode,
             _ => WaitingReason.Reconnecting,
         };
 

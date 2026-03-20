@@ -8,6 +8,7 @@ public sealed class UnityBridgeWaitPolicyTests
     [InlineData("compiling")]
     [InlineData("reloading")]
     [InlineData("entering_play_mode")]
+    [InlineData("exiting_play_mode")]
     public void ResolveEditorReadyWaitPolicy_UsesCompileGrace_ForCompileRelatedWaitingReason(string waitingReason)
     {
         var snapshot = Snapshot(waitingReason);

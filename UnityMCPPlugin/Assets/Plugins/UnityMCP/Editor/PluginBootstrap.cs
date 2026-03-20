@@ -31,6 +31,10 @@ namespace UnityMcpPlugin
                 {
                     runtime.PublishEditorState(EditorBridgeState.EnteringPlayMode);
                 }
+                else if (state == PlayModeStateChange.ExitingPlayMode)
+                {
+                    runtime.PublishEditorState(EditorBridgeState.ExitingPlayMode);
+                }
                 else if (state == PlayModeStateChange.EnteredPlayMode
                          || state == PlayModeStateChange.EnteredEditMode)
                 {

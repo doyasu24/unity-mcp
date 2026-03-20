@@ -181,10 +181,18 @@ internal sealed class UnityBridge
         return _scheduler.EnqueueAsync(async token =>
         {
             await EnsureEditorReadyAsync(token);
+
+            // Play モード中は AssetDatabase.Refresh が動作しないため、先に停止する
+            var stoppedPlayMode = await EnsureEditModeAsync(token);
+
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RefreshAssets);
             try
             {
                 var payload = await ExecuteSyncToolAsync(ToolNames.RefreshAssets, new JsonObject(), timeoutMs, token);
+                if (stoppedPlayMode && payload is JsonObject payloadObj)
+                {
+                    payloadObj["stopped_play_mode"] = true;
+                }
                 return new RefreshAssetsResult(payload);
             }
             catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
@@ -193,9 +201,58 @@ internal sealed class UnityBridge
                 // the response arrives. Wait for the Editor to reconnect and return success
                 // since the refresh was executed.
                 await EnsureEditorReadyAsync(token);
-                return new RefreshAssetsResult(new JsonObject { ["refreshed"] = true });
+                var result = new JsonObject { ["refreshed"] = true };
+                if (stoppedPlayMode)
+                {
+                    result["stopped_play_mode"] = true;
+                }
+                return new RefreshAssetsResult(result);
             }
         }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Play モードがアクティブなら停止し、Edit モードに遷移してから戻る。
+    /// AssetDatabase.Refresh は Play モード中に動作しないため、refresh_assets の前処理として使う。
+    /// 呼び出し元は EnsureEditorReadyAsync 済みであることを前提とする。
+    /// 停止した場合 true を返す。
+    /// </summary>
+    private async Task<bool> EnsureEditModeAsync(CancellationToken token)
+    {
+        var getStateTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPlayModeState);
+        var statePayload = await ExecuteSyncToolAsync(
+            ToolNames.GetPlayModeState, new JsonObject(), getStateTimeoutMs, token);
+
+        // is_playing が true なら paused 含め Play 中。
+        // EnsureEditorReadyAsync が先に呼ばれているため、遷移中 (EnteringPlayMode 等) はここに到達しない。
+        var isPlaying = statePayload is JsonObject obj
+            && (JsonHelpers.GetBool(obj, "is_playing") ?? false);
+
+        if (!isPlaying)
+            return false;
+
+        // Play モード停止。ドメインリロード発生時は ReconnectTimeout になる。
+        // ControlPlayModeAsync と同じリカバリパターン。
+        var stopTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ControlPlayMode);
+        try
+        {
+            await ExecuteSyncToolAsync(
+                ToolNames.ControlPlayMode,
+                new JsonObject { ["action"] = PlayModeActions.Stop },
+                stopTimeoutMs,
+                token);
+        }
+        catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+        {
+            // Play モード終了時のドメインリロードで Plugin が切断される。想定内。
+        }
+
+        // ドメインリロード発生時は再接続を待つ。
+        // 未発生時は IsEditorReady() == true で即座に返る。
+        // いずれの場合も、後続の refresh_assets は Plugin 側メインスレッドで実行されるため、
+        // Play モード遷移は完了済みとなる。
+        await EnsureEditorReadyAsync(token);
+        return true;
     }
 
     public Task<ControlPlayModeResult> ControlPlayModeAsync(ControlPlayModeRequest request, CancellationToken cancellationToken)
@@ -230,6 +287,22 @@ internal sealed class UnityBridge
                     ["is_playing"] = true,
                     ["is_paused"] = false,
                     ["is_playing_or_will_change_playmode"] = true,
+                });
+            }
+            catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout &&
+                                          string.Equals(request.Action, PlayModeActions.Stop, StringComparison.Ordinal))
+            {
+                // Domain reload during play mode exit disconnects the Plugin before
+                // the response arrives. Wait for the Editor to reconnect and return success
+                // since the action was accepted.
+                await EnsureEditorReadyAsync(token);
+                return new ControlPlayModeResult(new JsonObject
+                {
+                    ["action"] = request.Action,
+                    ["accepted"] = true,
+                    ["is_playing"] = false,
+                    ["is_paused"] = false,
+                    ["is_playing_or_will_change_playmode"] = false,
                 });
             }
         }, cancellationToken);
@@ -1374,7 +1447,7 @@ internal sealed class UnityBridge
 
     internal static EditorReadyWaitPolicy ResolveEditorReadyWaitPolicy(RuntimeSnapshot snapshot)
     {
-        if (snapshot.WaitingReason is "compiling" or "reloading" or "entering_play_mode")
+        if (snapshot.WaitingReason is "compiling" or "reloading" or "entering_play_mode" or "exiting_play_mode")
         {
             return new EditorReadyWaitPolicy(
                 TimeSpan.FromMilliseconds(Constants.CompileGraceTimeoutMs),

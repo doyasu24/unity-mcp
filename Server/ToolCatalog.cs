@@ -97,7 +97,7 @@ internal static class ToolCatalog
             120000,
             300000,
             false,
-            "Refreshes Unity Editor assets. Triggers recompilation if scripts changed and waits for completion.",
+            "Refreshes Unity Editor assets. Triggers recompilation if scripts changed and waits for completion. Automatically stops play mode if active.",
             EmptyObjectSchema()),
         [ToolNames.ControlPlayMode] = new(
             ToolNames.ControlPlayMode,

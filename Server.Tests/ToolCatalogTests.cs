@@ -381,6 +381,16 @@ public sealed class ToolCatalogTests
     }
 
     [Fact]
+    public void BuildMcpTools_RefreshAssetsDescription_MentionsAutoStopPlayMode()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.RefreshAssets);
+        var description = tool["description"]?.GetValue<string>();
+        Assert.NotNull(description);
+        Assert.Contains("Automatically stops play mode", description);
+    }
+
+    [Fact]
     public void BuildMcpTools_ContainsExecuteBatch()
     {
         var tools = ToolCatalog.BuildMcpTools();

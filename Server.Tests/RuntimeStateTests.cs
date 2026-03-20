@@ -58,4 +58,18 @@ public sealed class RuntimeStateTests
         Assert.False(snapshot.Connected);
         Assert.Equal("entering_play_mode", snapshot.WaitingReason);
     }
+
+    [Fact]
+    public void OnDisconnected_FromExitingPlayMode_KeepsExitingPlayModeWaitingReason()
+    {
+        var runtimeState = new RuntimeState();
+        runtimeState.OnConnected(EditorState.Ready, "conn-1", "editor-1");
+        runtimeState.OnEditorStatus(EditorState.ExitingPlayMode, 1);
+
+        runtimeState.OnDisconnected();
+        var snapshot = runtimeState.GetSnapshot();
+
+        Assert.False(snapshot.Connected);
+        Assert.Equal("exiting_play_mode", snapshot.WaitingReason);
+    }
 }
