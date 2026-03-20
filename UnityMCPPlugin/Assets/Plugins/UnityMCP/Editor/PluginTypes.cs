@@ -267,6 +267,7 @@ namespace UnityMcpPlugin
         [property: JsonProperty("camera_name")] string CameraName,
         [property: JsonProperty("source")] string Source);
 
+
     internal sealed record RunTestsJobResult(
         [property: JsonProperty("summary")] TestSummary Summary,
         [property: JsonProperty("failed_tests")] IReadOnlyList<FailedTest> FailedTests,

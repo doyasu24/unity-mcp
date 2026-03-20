@@ -360,15 +360,16 @@ internal static class ScreenshotSources
 {
     public const string GameView = "game_view";
     public const string SceneView = "scene_view";
+    public const string Camera = "camera";
 
     public static bool IsSupported(string? source)
     {
-        return source is GameView or SceneView;
+        return source is GameView or SceneView or Camera;
     }
 
     public static JsonArray ToJsonArray()
     {
-        return new JsonArray(GameView, SceneView);
+        return new JsonArray(GameView, SceneView, Camera);
     }
 }
 

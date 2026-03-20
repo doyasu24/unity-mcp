@@ -479,6 +479,23 @@ public sealed class McpToolServiceTests
     }
 
     [Fact]
+    public async Task CallToolAsync_AcceptsSource_Camera()
+    {
+        // "camera" は有効な source なので InvalidParams エラーにはならない。
+        // Unity 未接続のため実行時エラーにはなるが、パースは通ることを確認する。
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject { ["source"] = "camera", ["camera_path"] = "/Main Camera" };
+        var result = await service.CallToolAsync(ToolNames.CaptureScreenshot, args, CancellationToken.None);
+
+        if (result["isError"]?.GetValue<bool>() == true)
+        {
+            var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+            Assert.NotEqual(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+        }
+    }
+
+    [Fact]
     public async Task CallToolAsync_ReturnsError_ForCaptureScreenshot_InvalidWidth()
     {
         var service = CreateService(new RuntimeState());

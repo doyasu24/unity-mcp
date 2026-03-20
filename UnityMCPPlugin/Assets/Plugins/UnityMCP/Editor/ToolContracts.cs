@@ -170,10 +170,11 @@ namespace UnityMcpPlugin
     {
         internal const string GameView = "game_view";
         internal const string SceneView = "scene_view";
+        internal const string Camera = "camera";
 
         internal static bool IsSupported(string source)
         {
-            return source == GameView || source == SceneView;
+            return source == GameView || source == SceneView || source == Camera;
         }
     }
 }

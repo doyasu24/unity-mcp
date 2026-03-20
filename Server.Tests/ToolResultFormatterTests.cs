@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json.Nodes;
 using UnityMcpServer;
 
@@ -88,5 +89,42 @@ public sealed class ToolResultFormatterTests
 
         Assert.Null(response["structuredContent"]);
         Assert.Null(response["isError"]);
+    }
+
+    [Fact]
+    public void FormatScreenshotResult_SingleScreenshot_ReturnsExistingFormat()
+    {
+        // 単一スクリーンショットは現行フォーマットを維持
+        var tempDir = Path.Combine(Path.GetTempPath(), $"unity_mcp_test_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var pngBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
+            var path = Path.Combine(tempDir, "test.png");
+            File.WriteAllBytes(path, pngBytes);
+
+            var payload = new JsonObject
+            {
+                ["file_path"] = path, ["width"] = 1920, ["height"] = 1080,
+                ["camera_name"] = "Main Camera", ["source"] = "game_view",
+            };
+
+            var result = McpToolService.FormatScreenshotResult(payload);
+
+            var content = Assert.IsType<JsonArray>(result["content"]);
+            Assert.Equal(2, content.Count);
+
+            var imageBlock = Assert.IsType<JsonObject>(content[0]);
+            Assert.Equal("image", imageBlock["type"]?.GetValue<string>());
+
+            var textBlock = Assert.IsType<JsonObject>(content[1]);
+            Assert.Equal("text", textBlock["type"]?.GetValue<string>());
+
+            Assert.Null(result["structuredContent"]);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
     }
 }

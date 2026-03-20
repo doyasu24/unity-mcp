@@ -46,7 +46,7 @@ internal sealed class McpToolService
 
     private const int MaxInlineImageBytes = 5 * 1024 * 1024; // 5 MB
 
-    private static JsonObject FormatScreenshotResult(object payload)
+    internal static JsonObject FormatScreenshotResult(object payload)
     {
         var structured = ToolResultFormatter.ToStructuredContent(payload);
         var filePath = (structured as JsonObject)?["file_path"]?.GetValue<string>();
@@ -1177,7 +1177,7 @@ internal sealed class McpToolService
         {
             throw new McpException(
                 ErrorCodes.InvalidParams,
-                $"source must be one of {ScreenshotSources.GameView}|{ScreenshotSources.SceneView}",
+                $"source must be one of {ScreenshotSources.GameView}|{ScreenshotSources.SceneView}|{ScreenshotSources.Camera}",
                 new JsonObject { ["source"] = source });
         }
 

@@ -356,6 +356,7 @@ public sealed class ToolCatalogTests
 
         Assert.Contains(ScreenshotSources.GameView, @enum.Select(node => node?.GetValue<string>()));
         Assert.Contains(ScreenshotSources.SceneView, @enum.Select(node => node?.GetValue<string>()));
+        Assert.Contains(ScreenshotSources.Camera, @enum.Select(node => node?.GetValue<string>()));
     }
 
     [Fact]

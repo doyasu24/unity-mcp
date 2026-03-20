@@ -717,7 +717,7 @@ internal static class ToolCatalog
             15000,
             60000,
             false,
-            "Captures a screenshot from Game View or Scene View and saves it as a PNG file and returns it inline when possible.",
+            "Captures a screenshot from Game View, Scene View, or individual cameras. Returns images inline (base64 PNG) when possible.",
             new JsonObject
             {
                 ["type"] = "object",
@@ -728,7 +728,7 @@ internal static class ToolCatalog
                         ["type"] = "string",
                         ["enum"] = ScreenshotSources.ToJsonArray(),
                         ["default"] = ScreenshotSources.GameView,
-                        ["description"] = "Capture source: 'game_view' or 'scene_view'.",
+                        ["description"] = "Capture source. 'game_view': composited Game View output (Play Mode) or Camera.main render (Edit Mode). 'scene_view': Scene View camera render. 'camera': render from a specific camera (requires camera_path).",
                     },
                     ["width"] = new JsonObject
                     {
@@ -749,7 +749,7 @@ internal static class ToolCatalog
                     ["camera_path"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "Camera hierarchy path (game_view only). Defaults to Camera.main.",
+                        ["description"] = "Camera hierarchy path. Required for 'camera' source. For 'game_view' (Edit Mode only): overrides Camera.main. Ignored for 'scene_view'.",
                     },
                     ["output_path"] = new JsonObject
                     {
