@@ -51,6 +51,24 @@ namespace UnityMcpPlugin.Tools
                     return;
                 }
 
+                // get_component_info が返す読み取り形式も受け付ける
+                if (obj.ContainsKey("ref_path") && obj.Value<bool>("is_object_ref") == true)
+                {
+                    var refPath = obj.Value<string>("ref_path");
+                    // componentHint は渡さない — ResolveSceneRef が PPtr 型から自動判別する
+                    var resolvedObj = ResolveSceneRef(refPath, null, serializedObject, pathPrefix, context);
+                    resolved[pathPrefix] = new ResolvedRef { Object = resolvedObj };
+                    return;
+                }
+
+                if (obj.ContainsKey("asset_path") && obj.Value<bool>("is_asset_ref") == true)
+                {
+                    var assetPath = obj.Value<string>("asset_path");
+                    var resolvedObj = ResolveAssetRef(assetPath, serializedObject, pathPrefix);
+                    resolved[pathPrefix] = new ResolvedRef { Object = resolvedObj };
+                    return;
+                }
+
                 foreach (var prop in obj.Properties())
                 {
                     var childPath = string.IsNullOrEmpty(pathPrefix)

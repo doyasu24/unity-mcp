@@ -33,10 +33,53 @@ namespace UnityMcpPlugin.Tools
                 }
 
                 ApplyValue(serializedProp, prop.Value, resolvedRefs, name, 0);
-                fieldsSet.Add(name);
+
+                if (IsUnresolvedRef(serializedProp, prop.Value, resolvedRefs, name))
+                {
+                    fieldsSkipped.Add(name);
+                }
+                else
+                {
+                    fieldsSet.Add(name);
+                }
             }
 
             return new ApplyResult { FieldsSet = fieldsSet, FieldsSkipped = fieldsSkipped };
+        }
+
+        /// <summary>
+        /// ObjectReference フィールドに対して参照形式の値が渡されたが解決されなかった場合を検出する。
+        /// </summary>
+        private static bool IsUnresolvedRef(
+            SerializedProperty prop,
+            JToken value,
+            Dictionary<string, ResolvedRef> resolvedRefs,
+            string refPath)
+        {
+            if (prop.propertyType != SerializedPropertyType.ObjectReference)
+            {
+                return false;
+            }
+
+            if (value == null || value.Type == JTokenType.Null)
+            {
+                return false;
+            }
+
+            if (value is JObject obj)
+            {
+                var isRef = obj.ContainsKey("$ref")
+                    || obj.ContainsKey("$asset")
+                    || (obj.ContainsKey("ref_path") && obj.Value<bool>("is_object_ref") == true)
+                    || (obj.ContainsKey("asset_path") && obj.Value<bool>("is_asset_ref") == true);
+
+                if (isRef)
+                {
+                    return !resolvedRefs.ContainsKey(refPath);
+                }
+            }
+
+            return false;
         }
 
         private static void ApplyValue(
@@ -72,6 +115,33 @@ namespace UnityMcpPlugin.Tools
             }
 
             if (value is JObject assetObj && assetObj.ContainsKey("$asset"))
+            {
+                if (resolvedRefs.TryGetValue(refPath, out var resolved))
+                {
+                    prop.objectReferenceValue = resolved.Object;
+                }
+
+                return;
+            }
+
+            // get_component_info が返す読み取り形式の早期リターン
+            if (value is JObject refPathObj
+                && refPathObj.ContainsKey("ref_path")
+                && refPathObj.Value<bool>("is_object_ref") == true
+                && prop.propertyType == SerializedPropertyType.ObjectReference)
+            {
+                if (resolvedRefs.TryGetValue(refPath, out var resolved))
+                {
+                    prop.objectReferenceValue = resolved.Object;
+                }
+
+                return;
+            }
+
+            if (value is JObject assetPathObj
+                && assetPathObj.ContainsKey("asset_path")
+                && assetPathObj.Value<bool>("is_asset_ref") == true
+                && prop.propertyType == SerializedPropertyType.ObjectReference)
             {
                 if (resolvedRefs.TryGetValue(refPath, out var resolved))
                 {
