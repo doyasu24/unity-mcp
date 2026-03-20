@@ -230,7 +230,7 @@ internal sealed record GetPlayModeStateRequest();
 
 internal sealed record ControlPlayModeRequest(string Action);
 
-internal sealed record RunTestsRequest(string Mode, string? Filter);
+internal sealed record RunTestsRequest(string Mode, string? TestFullName, string? TestNamePattern);
 
 internal sealed record ReadConsoleResult(JsonNode Payload);
 

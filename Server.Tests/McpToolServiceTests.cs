@@ -710,6 +710,72 @@ public sealed class McpToolServiceTests
         Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
     }
 
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForRunTests_BothFiltersSpecified()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["test_full_name"] = "MyFixture.MyTest",
+            ["test_name_pattern"] = "^MyNamespace\\.",
+        };
+        var result = await service.CallToolAsync(ToolNames.RunTests, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+        Assert.Contains("mutually exclusive", structured["message"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ParsesRunTests_TestNamePatternOnly()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["test_name_pattern"] = "^MyNamespace\\.",
+        };
+        // Will fail at UnityBridge level (no editor), but validates the parse succeeds
+        var result = await service.CallToolAsync(ToolNames.RunTests, args, CancellationToken.None);
+        // If we get here without InvalidParams, the parse worked
+        var structured = result["structuredContent"] as JsonObject;
+        Assert.NotEqual(ErrorCodes.InvalidParams, structured?["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForRunTests_EmptyTestFullName()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["test_full_name"] = "",
+        };
+        var result = await service.CallToolAsync(ToolNames.RunTests, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForRunTests_EmptyTestNamePattern()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["test_name_pattern"] = "",
+        };
+        var result = await service.CallToolAsync(ToolNames.RunTests, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
     private static McpToolService CreateService(RuntimeState runtimeState)
     {
         var scheduler = new RequestScheduler(Constants.QueueMaxSize);

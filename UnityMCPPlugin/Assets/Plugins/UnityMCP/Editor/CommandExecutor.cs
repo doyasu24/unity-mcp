@@ -295,14 +295,23 @@ namespace UnityMcpPlugin
                         $"mode must be {RunTestsModes.All}|{RunTestsModes.Edit}|{RunTestsModes.Play}");
                 }
 
-                var filter = Payload.GetString(parameters, "filter") ?? string.Empty;
+                var testFullName = Payload.GetString(parameters, "test_full_name") ?? string.Empty;
+                var testNamePattern = Payload.GetString(parameters, "test_name_pattern") ?? string.Empty;
+
+                if (!string.IsNullOrWhiteSpace(testFullName) && !string.IsNullOrWhiteSpace(testNamePattern))
+                {
+                    throw new PluginException(
+                        "ERR_INVALID_PARAMS",
+                        "test_full_name and test_name_pattern are mutually exclusive");
+                }
+
                 var timeoutMs = Payload.GetInt(parameters, "timeout_ms");
                 if (!timeoutMs.HasValue || timeoutMs.Value <= 0)
                 {
                     timeoutMs = DefaultRunTestsTimeoutMs;
                 }
 
-                return await ExecuteRunTestsAsync(mode, filter, timeoutMs.Value);
+                return await ExecuteRunTestsAsync(mode, testFullName, testNamePattern, timeoutMs.Value);
             }
 
             throw new PluginException("ERR_UNKNOWN_COMMAND", $"unsupported tool: {toolName}");
@@ -777,27 +786,27 @@ namespace UnityMcpPlugin
             return true;
         }
 
-        private async Task<RunTestsJobResult> ExecuteRunTestsAsync(string mode, string filter, int timeoutMs)
+        private async Task<RunTestsJobResult> ExecuteRunTestsAsync(string mode, string testFullName, string testNamePattern, int timeoutMs)
         {
             using var cts = new CancellationTokenSource(timeoutMs);
             var cancellationToken = cts.Token;
 
             try
             {
-                var aggregate = new RunAggregation(mode, filter);
+                var aggregate = new RunAggregation(mode, testFullName, testNamePattern);
 
                 if (string.Equals(mode, RunTestsModes.All, StringComparison.Ordinal))
                 {
-                    await RunSingleModeAsync(TestMode.EditMode, filter, aggregate, cancellationToken);
+                    await RunSingleModeAsync(TestMode.EditMode, testFullName, testNamePattern, aggregate, cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
-                    await RunSingleModeAsync(TestMode.PlayMode, filter, aggregate, cancellationToken);
+                    await RunSingleModeAsync(TestMode.PlayMode, testFullName, testNamePattern, aggregate, cancellationToken);
                 }
                 else
                 {
                     var testMode = string.Equals(mode, RunTestsModes.Play, StringComparison.Ordinal)
                         ? TestMode.PlayMode
                         : TestMode.EditMode;
-                    await RunSingleModeAsync(testMode, filter, aggregate, cancellationToken);
+                    await RunSingleModeAsync(testMode, testFullName, testNamePattern, aggregate, cancellationToken);
                 }
 
                 return aggregate.ToResult();
@@ -812,17 +821,33 @@ namespace UnityMcpPlugin
             }
             catch (Exception ex)
             {
-                return BuildExceptionResult(mode, filter, ex);
+                return BuildExceptionResult(mode, testFullName, testNamePattern, ex);
             }
         }
 
         private static async Task RunSingleModeAsync(
             TestMode testMode,
-            string filter,
+            string testFullName,
+            string testNamePattern,
             RunAggregation aggregate,
             CancellationToken cancellationToken)
         {
-            // Pre-check: retrieve test list and skip Execute if no leaf tests exist.
+            // Validate regex upfront so invalid patterns produce a clear error
+            // instead of silently returning empty results.
+            if (!string.IsNullOrWhiteSpace(testNamePattern))
+            {
+                try
+                {
+                    _ = new System.Text.RegularExpressions.Regex(testNamePattern);
+                }
+                catch (System.ArgumentException ex)
+                {
+                    throw new PluginException("ERR_INVALID_PARAMS",
+                        $"test_name_pattern is not a valid regex: {ex.Message}");
+                }
+            }
+
+            // Pre-check: retrieve test list and skip Execute if no matching leaf tests exist.
             // TestRunnerApi.Execute() never fires RunFinished when there are no tests,
             // causing the request to hang forever.
             var testListTcs = new TaskCompletionSource<ITestAdaptor>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -854,7 +879,7 @@ namespace UnityMcpPlugin
             }
 
             var testRoot = await testListTcs.Task;
-            if (!HasLeafTests(testRoot))
+            if (!HasMatchingLeafTests(testRoot, testFullName, testNamePattern))
             {
                 return;
             }
@@ -874,9 +899,14 @@ namespace UnityMcpPlugin
                     testMode = testMode,
                 };
 
-                if (!string.IsNullOrWhiteSpace(filter))
+                // testFullName → exact match via testNames, testNamePattern → regex via groupNames
+                if (!string.IsNullOrWhiteSpace(testFullName))
                 {
-                    testFilter.testNames = new[] { filter };
+                    testFilter.testNames = new[] { testFullName };
+                }
+                else if (!string.IsNullOrWhiteSpace(testNamePattern))
+                {
+                    testFilter.groupNames = new[] { testNamePattern };
                 }
 
                 var settings = new ExecutionSettings(testFilter)
@@ -919,15 +949,45 @@ namespace UnityMcpPlugin
             MergeRunResult(root, aggregate);
         }
 
-        private static bool HasLeafTests(ITestAdaptor node)
+        /// <summary>
+        /// Checks whether the test tree contains leaf tests matching the filter criteria.
+        /// When no filter is specified, returns true if any leaf test exists.
+        /// When testFullName is specified, matches FullName exactly.
+        /// When testNamePattern is specified, matches FullName by regex.
+        /// </summary>
+        private static bool HasMatchingLeafTests(ITestAdaptor node, string testFullName, string testNamePattern)
         {
             if (node == null) return false;
-            if (!node.IsSuite) return true;
+
+            if (!node.IsSuite)
+            {
+                // Leaf test node — check against filter
+                if (!string.IsNullOrWhiteSpace(testFullName))
+                {
+                    return string.Equals(node.FullName, testFullName, StringComparison.Ordinal);
+                }
+
+                if (!string.IsNullOrWhiteSpace(testNamePattern))
+                {
+                    try
+                    {
+                        return System.Text.RegularExpressions.Regex.IsMatch(
+                            node.FullName ?? string.Empty, testNamePattern);
+                    }
+                    catch (System.ArgumentException)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
             if (node.Children == null) return false;
 
             foreach (var child in node.Children)
             {
-                if (HasLeafTests(child)) return true;
+                if (HasMatchingLeafTests(child, testFullName, testNamePattern)) return true;
             }
 
             return false;
@@ -972,7 +1032,7 @@ namespace UnityMcpPlugin
                 result.StackTrace ?? string.Empty));
         }
 
-        private static RunTestsJobResult BuildExceptionResult(string mode, string filter, Exception ex)
+        private static RunTestsJobResult BuildExceptionResult(string mode, string testFullName, string testNamePattern, Exception ex)
         {
             return new RunTestsJobResult(
                 new TestSummary(1, 0, 1, 0, 0),
@@ -984,19 +1044,22 @@ namespace UnityMcpPlugin
                         ex.StackTrace ?? string.Empty),
                 },
                 mode,
-                filter);
+                testFullName,
+                testNamePattern);
         }
 
         private sealed class RunAggregation
         {
-            internal RunAggregation(string mode, string filter)
+            internal RunAggregation(string mode, string testFullName, string testNamePattern)
             {
                 Mode = mode;
-                Filter = filter;
+                TestFullName = testFullName;
+                TestNamePattern = testNamePattern;
             }
 
             internal string Mode { get; }
-            internal string Filter { get; }
+            internal string TestFullName { get; }
+            internal string TestNamePattern { get; }
             internal int Total { get; set; }
             internal int Passed { get; set; }
             internal int Failed { get; set; }
@@ -1010,7 +1073,8 @@ namespace UnityMcpPlugin
                     new TestSummary(Total, Passed, Failed, Skipped, DurationMs),
                     FailedTests,
                     Mode,
-                    Filter);
+                    TestFullName,
+                    TestNamePattern);
             }
         }
 

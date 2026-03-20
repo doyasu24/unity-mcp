@@ -136,10 +136,15 @@ internal static class ToolCatalog
                         ["enum"] = RunTestsModes.ToJsonArray(),
                         ["default"] = RunTestsModes.All,
                     },
-                    ["filter"] = new JsonObject
+                    ["test_full_name"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "Test name filter passed to TestRunnerApi. Omit to run all tests.",
+                        ["description"] = "Fully qualified test name for exact match (e.g. 'MyFixture.MyTest(1)'). Maps to TestRunnerApi testNames. Mutually exclusive with test_name_pattern.",
+                    },
+                    ["test_name_pattern"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Regex pattern to match test names (e.g. '^MyNamespace\\\\.' to run all tests in a namespace). Maps to TestRunnerApi groupNames. Mutually exclusive with test_full_name.",
                     },
                 },
                 ["additionalProperties"] = false,

@@ -1020,9 +1020,14 @@ internal sealed class UnityBridge
             {
                 ["mode"] = request.Mode,
             };
-            if (!string.IsNullOrWhiteSpace(request.Filter))
+            if (!string.IsNullOrWhiteSpace(request.TestFullName))
             {
-                parameters["filter"] = request.Filter;
+                parameters["test_full_name"] = request.TestFullName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.TestNamePattern))
+            {
+                parameters["test_name_pattern"] = request.TestNamePattern;
             }
 
             var payload = await ExecuteSyncToolAsync(ToolNames.RunTests, parameters, timeoutMs, token);

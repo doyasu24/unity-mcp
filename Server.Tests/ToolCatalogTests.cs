@@ -422,6 +422,24 @@ public sealed class ToolCatalogTests
         Assert.Equal(600000, metadata.MaxTimeoutMs);
     }
 
+    [Fact]
+    public void BuildMcpTools_RunTestsSchema_HasTestFullNameAndTestNamePattern()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.RunTests);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var properties = Assert.IsType<JsonObject>(schema["properties"]);
+
+        Assert.NotNull(properties["test_full_name"]);
+        Assert.Equal("string", properties["test_full_name"]!["type"]?.GetValue<string>());
+
+        Assert.NotNull(properties["test_name_pattern"]);
+        Assert.Equal("string", properties["test_name_pattern"]!["type"]?.GetValue<string>());
+
+        // Old 'filter' property must not exist
+        Assert.False(properties.ContainsKey("filter"));
+    }
+
     private static void AssertSyncToolWithoutCancel(JsonArray tools, string toolName)
     {
         var tool = AssertToolExists(tools, toolName);

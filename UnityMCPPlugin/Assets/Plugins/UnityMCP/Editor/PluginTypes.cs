@@ -290,15 +290,17 @@ namespace UnityMcpPlugin
         [property: JsonProperty("summary")] TestSummary Summary,
         [property: JsonProperty("failed_tests")] IReadOnlyList<FailedTest> FailedTests,
         [property: JsonProperty("mode")] string Mode,
-        [property: JsonProperty("filter")] string Filter)
+        [property: JsonProperty("test_full_name")] string TestFullName,
+        [property: JsonProperty("test_name_pattern")] string TestNamePattern)
     {
-        internal static RunTestsJobResult Empty(string mode, string filter)
+        internal static RunTestsJobResult Empty(string mode, string testFullName, string testNamePattern)
         {
             return new RunTestsJobResult(
                 new TestSummary(0, 0, 0, 0, 0),
                 new List<FailedTest>(),
                 mode,
-                filter);
+                testFullName,
+                testNamePattern);
         }
     }
 }

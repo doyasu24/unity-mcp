@@ -400,9 +400,13 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
       "enum": ["all", "edit", "play"],
       "default": "all"
     },
-    "filter": {
+    "test_full_name": {
       "type": "string",
-      "description": "Test name filter passed to TestRunnerApi. Omit to run all tests."
+      "description": "Fully qualified test name for exact match (e.g. 'MyFixture.MyTest(1)'). Maps to TestRunnerApi testNames. Mutually exclusive with test_name_pattern."
+    },
+    "test_name_pattern": {
+      "type": "string",
+      "description": "Regex pattern to match test names (e.g. '^MyNamespace\\.' to run all tests in a namespace). Maps to TestRunnerApi groupNames. Mutually exclusive with test_full_name."
     }
   },
   "additionalProperties": false
@@ -426,20 +430,29 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
       "message": "...",
       "stack_trace": "..."
     }
-  ]
+  ],
+  "mode": "all",
+  "test_full_name": "",
+  "test_name_pattern": ""
 }
 ```
 
 フィールド定義:
 1. `summary`: テスト結果の集約。`total`, `passed`, `failed`, `skipped`, `duration_ms` を含む
 2. `failed_tests`: 失敗テストの詳細配列。各要素は `name`, `message`, `stack_trace` を含む
+3. `mode`: 実行モード
+4. `test_full_name`: 指定された完全修飾名（未指定時は空文字列）
+5. `test_name_pattern`: 指定された正規表現パターン（未指定時は空文字列）
 
 ### 9.3 動作ルール
 
 1. `mode` 省略時は `all`。
 2. `mode=all` の場合は `edit` と `play` の両方を順に実行し、結果をマージして返す。
 3. テスト実行が完了するまでブロックする。タイムアウト時は `ERR_TIMEOUT` を返す。
-4. `filter` 指定時は TestRunnerApi のフィルタとして使用する。
+4. `test_full_name` 指定時は TestRunnerApi の `testNames`（完全一致）フィルタとして使用する。
+5. `test_name_pattern` 指定時は TestRunnerApi の `groupNames`（正規表現）フィルタとして使用する。
+6. `test_full_name` と `test_name_pattern` は排他。同時指定時は `ERR_INVALID_PARAMS` を返す。
+7. フィルタにマッチするテストがない場合、ハングせず空結果を返す。
 
 ### 9.4 メタデータ
 

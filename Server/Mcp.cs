@@ -164,21 +164,33 @@ internal sealed class McpToolService
                 new JsonObject { ["mode"] = mode });
         }
 
-        string? filter = null;
-        if (!arguments.TryGetPropertyValue("filter", out var node) || node is null)
-        {
-            return new RunTestsRequest(mode, null);
-        }
+        var testFullName = JsonHelpers.GetString(arguments, "test_full_name");
+        var testNamePattern = JsonHelpers.GetString(arguments, "test_name_pattern");
 
-        filter = JsonHelpers.GetString(arguments, "filter");
-        if (string.IsNullOrWhiteSpace(filter))
+        if (!string.IsNullOrWhiteSpace(testFullName) && !string.IsNullOrWhiteSpace(testNamePattern))
         {
             throw new McpException(
                 ErrorCodes.InvalidParams,
-                "filter must be a non-empty string when provided");
+                "test_full_name and test_name_pattern are mutually exclusive");
         }
 
-        return new RunTestsRequest(mode, filter);
+        if (arguments.TryGetPropertyValue("test_full_name", out var fnNode) && fnNode is not null &&
+            string.IsNullOrWhiteSpace(testFullName))
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                "test_full_name must be a non-empty string when provided");
+        }
+
+        if (arguments.TryGetPropertyValue("test_name_pattern", out var pnNode) && pnNode is not null &&
+            string.IsNullOrWhiteSpace(testNamePattern))
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                "test_name_pattern must be a non-empty string when provided");
+        }
+
+        return new RunTestsRequest(mode, testFullName, testNamePattern);
     }
 
     private static ControlPlayModeRequest ParseControlPlayModeRequest(JsonObject arguments)
