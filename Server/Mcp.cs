@@ -101,9 +101,109 @@ internal sealed class McpToolService
             ToolNames.GetAssetInfo => (await _unityBridge.GetAssetInfoAsync(ParseGetAssetInfoRequest(arguments), cancellationToken)).Payload,
             ToolNames.ManageAsset => (await _unityBridge.ManageAssetAsync(ParseManageAssetRequest(arguments), cancellationToken)).Payload,
             ToolNames.CaptureScreenshot => (await _unityBridge.CaptureScreenshotAsync(ParseCaptureScreenshotRequest(arguments), cancellationToken)).Payload,
-            ToolNames.ExecuteBatch => (await _unityBridge.ExecuteBatchAsync(ParseExecuteBatchRequest(arguments), cancellationToken)).Payload,
+            ToolNames.ExecuteBatch => await ExecuteBatchServerSideAsync(arguments, cancellationToken),
             _ => throw new McpException(ErrorCodes.UnknownCommand, $"Unknown tool: {toolName}"),
         };
+    }
+
+    /// <summary>
+    /// Server-side batch: validates all operations upfront, then dispatches each via ExecuteToolAsync.
+    /// Each operation goes through the normal bridge safety path (EnsureEditMode, reconnect handling, etc.).
+    /// Operations may be interleaved with other requests (no isolation guarantee).
+    /// </summary>
+    private async Task<object> ExecuteBatchServerSideAsync(JsonObject arguments, CancellationToken ct)
+    {
+        // --- Parse & validate ALL operations upfront ---
+        var opsArray = arguments["operations"] as JsonArray;
+        if (opsArray == null || opsArray.Count == 0)
+            throw new McpException(ErrorCodes.InvalidParams,
+                "operations is required and must be a non-empty array");
+        if (opsArray.Count > ExecuteBatchLimits.MaxOperations)
+            throw new McpException(ErrorCodes.InvalidParams,
+                $"operations must have at most {ExecuteBatchLimits.MaxOperations} items");
+
+        var validated = new (string ToolName, JsonObject Args)[opsArray.Count];
+        for (int i = 0; i < opsArray.Count; i++)
+        {
+            if (opsArray[i] is not JsonObject opObj)
+                throw new McpException(ErrorCodes.InvalidParams, $"operations[{i}] must be an object");
+
+            var toolName = JsonHelpers.GetString(opObj, "tool_name");
+            if (string.IsNullOrWhiteSpace(toolName))
+                throw new McpException(ErrorCodes.InvalidParams, $"operations[{i}].tool_name is required");
+            if (toolName == ToolNames.ExecuteBatch)
+                throw new McpException(ErrorCodes.InvalidParams,
+                    $"operations[{i}].tool_name 'execute_batch' is not allowed in a batch");
+            if (!ToolCatalog.Items.ContainsKey(toolName))
+                throw new McpException(ErrorCodes.InvalidParams,
+                    $"operations[{i}].tool_name '{toolName}' is not a known tool");
+
+            // "as JsonObject" で非オブジェクト型（配列・文字列等）を安全に null 化
+            var args = opObj["arguments"] as JsonObject;
+            validated[i] = (toolName, args?.DeepClone().AsObject() ?? new JsonObject());
+        }
+
+        // --- Execute sequentially ---
+        var stopOnError = JsonHelpers.GetBool(arguments, "stop_on_error") ?? true;
+        var results = new JsonArray();
+        int succeeded = 0, failed = 0, skipped = 0;
+        bool stopped = false;
+
+        foreach (var (toolName, args) in validated)
+        {
+            if (stopped)
+            {
+                results.Add(BuildOpResult(toolName, false, null, "skipped"));
+                skipped++;
+                continue;
+            }
+
+            try
+            {
+                var payload = await ExecuteToolAsync(toolName, args, ct);
+                results.Add(BuildOpResult(toolName, true, payload, null));
+                succeeded++;
+            }
+            catch (McpException ex)
+            {
+                results.Add(BuildOpResult(toolName, false, null, $"{ex.Code}: {ex.Message}"));
+                failed++;
+                if (stopOnError) stopped = true;
+            }
+            catch (Exception ex)
+            {
+                results.Add(BuildOpResult(toolName, false, null, ex.Message));
+                failed++;
+                if (stopOnError) stopped = true;
+            }
+        }
+
+        return new JsonObject
+        {
+            ["success"] = failed == 0,
+            ["results"] = results,
+            ["summary"] = new JsonObject
+            {
+                ["total"] = results.Count,
+                ["succeeded"] = succeeded,
+                ["failed"] = failed,
+                ["skipped"] = skipped,
+            },
+        };
+    }
+
+    private static JsonObject BuildOpResult(string toolName, bool success, object? result, string? error)
+    {
+        var obj = new JsonObject
+        {
+            ["tool_name"] = toolName,
+            ["success"] = success,
+        };
+        if (success && result != null)
+            obj["result"] = ToolResultFormatter.ToStructuredContent(result);
+        if (!success && error != null)
+            obj["error"] = error;
+        return obj;
     }
 
     private static ReadConsoleRequest ParseReadConsoleRequest(JsonObject arguments)
@@ -1105,87 +1205,6 @@ internal sealed class McpToolService
         return new CaptureScreenshotRequest(source, width, height, cameraPath, outputPath);
     }
 
-    private static ExecuteBatchRequest ParseExecuteBatchRequest(JsonObject arguments)
-    {
-        if (!arguments.TryGetPropertyValue("operations", out var opsNode) || opsNode is not JsonArray opsArray || opsArray.Count == 0)
-        {
-            throw new McpException(ErrorCodes.InvalidParams, "operations is required and must be a non-empty array");
-        }
-
-        if (opsArray.Count > ExecuteBatchLimits.MaxOperations)
-        {
-            throw new McpException(
-                ErrorCodes.InvalidParams,
-                $"operations must have at most {ExecuteBatchLimits.MaxOperations} items",
-                new JsonObject { ["count"] = opsArray.Count });
-        }
-
-        var operations = new BatchOperation[opsArray.Count];
-        for (var i = 0; i < opsArray.Count; i++)
-        {
-            if (opsArray[i] is not JsonObject opObj)
-            {
-                throw new McpException(ErrorCodes.InvalidParams, $"operations[{i}] must be an object");
-            }
-
-            var toolName = JsonHelpers.GetString(opObj, "tool_name");
-            if (string.IsNullOrWhiteSpace(toolName))
-            {
-                throw new McpException(ErrorCodes.InvalidParams, $"operations[{i}].tool_name is required");
-            }
-
-            if (BatchBlockedTools.IsBlocked(toolName))
-            {
-                throw new McpException(
-                    ErrorCodes.InvalidParams,
-                    $"operations[{i}].tool_name '{toolName}' is not allowed in a batch");
-            }
-
-            if (!ToolCatalog.Items.ContainsKey(toolName))
-            {
-                throw new McpException(
-                    ErrorCodes.InvalidParams,
-                    $"operations[{i}].tool_name '{toolName}' is not a known tool");
-            }
-
-            var args = opObj["arguments"] as JsonObject ?? new JsonObject();
-            // Clone to avoid mutating the original
-            args = args.DeepClone().AsObject();
-
-            var wireToolName = ResolveWireToolName(toolName, args);
-            args = RemapBatchArguments(wireToolName, args);
-
-            operations[i] = new BatchOperation(wireToolName, args);
-        }
-
-        var stopOnError = JsonHelpers.GetBool(arguments, "stop_on_error") ?? true;
-        var atomic = JsonHelpers.GetBool(arguments, "atomic") ?? false;
-
-        return new ExecuteBatchRequest(operations, stopOnError, atomic);
-    }
-
-    private static string ResolveWireToolName(string mcpToolName, JsonObject arguments)
-    {
-        var hasPrefab = HasPrefabPath(arguments);
-        return mcpToolName switch
-        {
-            ToolNames.GetHierarchy => hasPrefab ? ToolNames.GetPrefabHierarchy : ToolNames.GetSceneHierarchy,
-            ToolNames.GetComponentInfo => hasPrefab ? ToolNames.GetPrefabComponentInfo : ToolNames.GetSceneComponentInfo,
-            ToolNames.ManageComponent => hasPrefab ? ToolNames.ManagePrefabComponent : ToolNames.ManageSceneComponent,
-            ToolNames.FindGameObjects => hasPrefab ? ToolNames.FindPrefabGameObjects : ToolNames.FindSceneGameObjects,
-            ToolNames.ManageGameObject => hasPrefab ? ToolNames.ManagePrefabGameObject : ToolNames.ManageSceneGameObject,
-            _ => mcpToolName,
-        };
-    }
-
-    private static JsonObject RemapBatchArguments(string wireToolName, JsonObject arguments)
-    {
-        if (wireToolName != ToolNames.GetPrefabHierarchy) return arguments;
-        if (!arguments.ContainsKey("root_path") || arguments.ContainsKey("game_object_path")) return arguments;
-        arguments["game_object_path"] = arguments["root_path"]?.DeepClone();
-        arguments.Remove("root_path");
-        return arguments;
-    }
 }
 
 internal static class ToolResultFormatter

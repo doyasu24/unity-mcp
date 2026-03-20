@@ -407,19 +407,3 @@ internal static class ExecuteBatchLimits
     public const int MaxOperations = 50;
 }
 
-internal static class BatchBlockedTools
-{
-    public static bool IsBlocked(string toolName)
-    {
-        return toolName is ToolNames.ExecuteBatch
-            or ToolNames.GetEditorState
-            or ToolNames.RunTests
-            or ToolNames.RefreshAssets;
-    }
-}
-
-internal sealed record BatchOperation(string ToolName, JsonObject Arguments);
-
-internal sealed record ExecuteBatchRequest(BatchOperation[] Operations, bool StopOnError, bool Atomic);
-
-internal sealed record ExecuteBatchResult(JsonNode Payload);

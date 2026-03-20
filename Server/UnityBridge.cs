@@ -981,34 +981,6 @@ internal sealed class UnityBridge
         }, cancellationToken);
     }
 
-    public Task<ExecuteBatchResult> ExecuteBatchAsync(ExecuteBatchRequest request, CancellationToken cancellationToken)
-    {
-        return _scheduler.EnqueueAsync(async token =>
-        {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ExecuteBatch);
-            var opsArray = new JsonArray();
-            foreach (var op in request.Operations)
-            {
-                opsArray.Add(new JsonObject
-                {
-                    ["tool_name"] = op.ToolName,
-                    ["arguments"] = op.Arguments.DeepClone(),
-                });
-            }
-
-            var parameters = new JsonObject
-            {
-                ["operations"] = opsArray,
-                ["stop_on_error"] = request.StopOnError,
-                ["atomic"] = request.Atomic,
-            };
-
-            var payload = await ExecuteSyncToolAsync(ToolNames.ExecuteBatch, parameters, timeoutMs, token);
-            return new ExecuteBatchResult(payload);
-        }, cancellationToken);
-    }
-
     public Task<RunTestsResult> RunTestsAsync(RunTestsRequest request, CancellationToken cancellationToken)
     {
         return _scheduler.EnqueueAsync(async token =>

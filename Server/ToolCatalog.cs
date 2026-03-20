@@ -761,10 +761,14 @@ internal static class ToolCatalog
             }),
         [ToolNames.ExecuteBatch] = new(
             ToolNames.ExecuteBatch,
-            120000,
             600000,
+            2400000,
             false,
-            "Executes multiple tool calls in a single request. Reduces round-trips. Supports atomic mode with Unity Undo (best-effort).",
+            "Executes multiple tool calls sequentially in a single MCP request. " +
+            "Reduces round-trips when you need several operations together. " +
+            "Only execute_batch itself is disallowed (no recursion). " +
+            "All other tools including long-running ones (run_tests, refresh_assets) are allowed; " +
+            "total latency is the sum of all operations.",
             new JsonObject
             {
                 ["type"] = "object",
@@ -798,12 +802,6 @@ internal static class ToolCatalog
                         ["type"] = "boolean",
                         ["default"] = true,
                         ["description"] = "Stop executing remaining operations on first error.",
-                    },
-                    ["atomic"] = new JsonObject
-                    {
-                        ["type"] = "boolean",
-                        ["default"] = false,
-                        ["description"] = "Wrap in Unity Undo group for rollback on failure (best-effort).",
                     },
                 },
                 ["required"] = new JsonArray("operations"),

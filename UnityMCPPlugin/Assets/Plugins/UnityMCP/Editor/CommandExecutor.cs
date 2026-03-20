@@ -280,11 +280,6 @@ namespace UnityMcpPlugin
                 return await MainThreadDispatcher.InvokeAsync(() => CaptureScreenshotTool.Execute(parameters));
             }
 
-            if (string.Equals(toolName, ToolNames.ExecuteBatch, StringComparison.Ordinal))
-            {
-                return await ExecuteBatchAsync(parameters);
-            }
-
             if (string.Equals(toolName, ToolNames.RunTests, StringComparison.Ordinal))
             {
                 var mode = Payload.GetString(parameters, "mode") ?? RunTestsModes.All;
@@ -315,89 +310,6 @@ namespace UnityMcpPlugin
             }
 
             throw new PluginException("ERR_UNKNOWN_COMMAND", $"unsupported tool: {toolName}");
-        }
-
-        private async Task<ExecuteBatchPayload> ExecuteBatchAsync(JObject parameters)
-        {
-            var opsArray = parameters?["operations"] as JArray;
-            if (opsArray == null || opsArray.Count == 0)
-                throw new PluginException("ERR_INVALID_PARAMS", "operations is required and must not be empty");
-
-            var stopOnError = parameters?["stop_on_error"]?.Value<bool>() ?? true;
-            var atomic = parameters?["atomic"]?.Value<bool>() ?? false;
-
-            var results = new List<BatchOperationResult>(opsArray.Count);
-            var succeeded = 0;
-            var failed = 0;
-            var skipped = 0;
-            var rolledBack = false;
-            var undoGroup = -1;
-
-            if (atomic)
-            {
-                await MainThreadDispatcher.InvokeAsync(() =>
-                {
-                    undoGroup = UnityEditor.Undo.GetCurrentGroup();
-                    UnityEditor.Undo.IncrementCurrentGroup();
-                    UnityEditor.Undo.SetCurrentGroupName("execute_batch");
-                    return true;
-                });
-            }
-
-            var stopped = false;
-            foreach (var opToken in opsArray)
-            {
-                var op = opToken as JObject;
-                var opToolName = op?["tool_name"]?.Value<string>() ?? string.Empty;
-                var opArgs = op?["arguments"] as JObject ?? new JObject();
-
-                if (stopped)
-                {
-                    results.Add(new BatchOperationResult(opToolName, false, null, "skipped"));
-                    skipped++;
-                    continue;
-                }
-
-                try
-                {
-                    var result = await ExecuteToolAsync(opToolName, opArgs);
-                    results.Add(new BatchOperationResult(opToolName, true, result, null));
-                    succeeded++;
-                }
-                catch (PluginException ex)
-                {
-                    results.Add(new BatchOperationResult(opToolName, false, null, $"{ex.Code}: {ex.Message}"));
-                    failed++;
-                    if (stopOnError) stopped = true;
-                }
-                catch (Exception ex)
-                {
-                    results.Add(new BatchOperationResult(opToolName, false, null, ex.Message));
-                    failed++;
-                    if (stopOnError) stopped = true;
-                }
-            }
-
-            if (atomic && failed > 0)
-            {
-                await MainThreadDispatcher.InvokeAsync(() =>
-                {
-                    UnityEditor.Undo.RevertAllDownToGroup(undoGroup);
-                    return true;
-                });
-                rolledBack = true;
-            }
-            else if (atomic)
-            {
-                await MainThreadDispatcher.InvokeAsync(() =>
-                {
-                    UnityEditor.Undo.CollapseUndoOperations(undoGroup);
-                    return true;
-                });
-            }
-
-            var summary = new BatchSummary(results.Count, succeeded, failed, skipped);
-            return new ExecuteBatchPayload(failed == 0, results, summary, atomic, rolledBack);
         }
 
         private static ListScenesPayload ExecuteListScenes(JObject parameters)

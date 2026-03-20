@@ -673,22 +673,70 @@ public sealed class McpToolServiceTests
     }
 
     [Fact]
-    public async Task CallToolAsync_ReturnsError_ForExecuteBatch_BlockedTool()
+    public async Task CallToolAsync_ExecuteBatch_ValidatesUnknownToolBeforeExecution()
     {
+        // 事前バリデーションで不正ツール名を弾く（部分的副作用なし）
         var service = CreateService(new RuntimeState());
 
         var args = new JsonObject
         {
             ["operations"] = new JsonArray
             {
-                new JsonObject { ["tool_name"] = "run_tests" },
+                new JsonObject
+                {
+                    ["tool_name"] = "get_editor_state",
+                    ["arguments"] = new JsonObject(),
+                },
+                new JsonObject
+                {
+                    ["tool_name"] = "nonexistent_tool",
+                    ["arguments"] = new JsonObject(),
+                },
             },
         };
         var result = await service.CallToolAsync(ToolNames.ExecuteBatch, args, CancellationToken.None);
 
+        // 不正ツール名があるので全体がエラー（部分的副作用なし）
         Assert.True(result["isError"]?.GetValue<bool>());
         var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
         Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+        Assert.Contains("nonexistent_tool", structured["message"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ExecuteBatch_RunTestsNotBlocked()
+    {
+        // run_tests はバッチ内で許可されている（execute_batch 自身のみ再帰防止でブロック）
+        // 実際の実行は Unity 接続が必要なので接続エラーになるが、バリデーションは通過する
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["operations"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["tool_name"] = "run_tests",
+                    ["arguments"] = new JsonObject(),
+                },
+            },
+        };
+        var result = await service.CallToolAsync(ToolNames.ExecuteBatch, args, CancellationToken.None);
+
+        // batch レスポンス形式で返る
+        // Unity 未接続のためツール実行はエラーになるが、"not allowed in a batch" ではない
+        var structured = result["structuredContent"];
+        if (result["isError"]?.GetValue<bool>() != true)
+        {
+            // batch レスポンスが返る
+            Assert.NotNull(structured?["results"]);
+        }
+        else
+        {
+            // エラーの場合、ブロックリスト由来ではないことを確認
+            var message = structured?["message"]?.GetValue<string>() ?? "";
+            Assert.DoesNotContain("not allowed in a batch", message);
+        }
     }
 
     [Fact]

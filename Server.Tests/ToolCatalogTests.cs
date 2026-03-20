@@ -410,16 +410,16 @@ public sealed class ToolCatalogTests
     }
 
     [Fact]
-    public void DefaultTimeoutMs_ExecuteBatch_Returns120000()
+    public void DefaultTimeoutMs_ExecuteBatch_Returns600000()
     {
-        Assert.Equal(120000, ToolCatalog.DefaultTimeoutMs(ToolNames.ExecuteBatch));
+        Assert.Equal(600000, ToolCatalog.DefaultTimeoutMs(ToolNames.ExecuteBatch));
     }
 
     [Fact]
-    public void MaxTimeoutMs_ExecuteBatch_Returns600000()
+    public void MaxTimeoutMs_ExecuteBatch_Returns2400000()
     {
         Assert.True(ToolCatalog.Items.TryGetValue(ToolNames.ExecuteBatch, out var metadata));
-        Assert.Equal(600000, metadata.MaxTimeoutMs);
+        Assert.Equal(2400000, metadata.MaxTimeoutMs);
     }
 
     [Fact]
