@@ -964,6 +964,131 @@ internal sealed class UnityBridge
         }, cancellationToken);
     }
 
+    public Task<ManageAsmdefResult> ManageAsmdefAsync(ManageAsmdefRequest request, CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageAsmdef);
+            var parameters = new JsonObject
+            {
+                ["action"] = request.Action,
+            };
+
+            if (!string.IsNullOrWhiteSpace(request.Name))
+            {
+                parameters["name"] = request.Name;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Guid))
+            {
+                parameters["guid"] = request.Guid;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Directory))
+            {
+                parameters["directory"] = request.Directory;
+            }
+
+            if (request.RootNamespace is not null)
+            {
+                parameters["root_namespace"] = request.RootNamespace;
+            }
+
+            if (request.References is { Length: > 0 })
+            {
+                var arr = new JsonArray();
+                foreach (var r in request.References)
+                {
+                    arr.Add(r);
+                }
+
+                parameters["references"] = arr;
+            }
+
+            if (request.UseGuids.HasValue)
+            {
+                parameters["use_guids"] = request.UseGuids.Value;
+            }
+
+            if (request.IncludePlatforms is { Length: > 0 })
+            {
+                var arr = new JsonArray();
+                foreach (var p in request.IncludePlatforms)
+                {
+                    arr.Add(p);
+                }
+
+                parameters["include_platforms"] = arr;
+            }
+
+            if (request.ExcludePlatforms is { Length: > 0 })
+            {
+                var arr = new JsonArray();
+                foreach (var p in request.ExcludePlatforms)
+                {
+                    arr.Add(p);
+                }
+
+                parameters["exclude_platforms"] = arr;
+            }
+
+            if (request.AllowUnsafeCode.HasValue)
+            {
+                parameters["allow_unsafe_code"] = request.AllowUnsafeCode.Value;
+            }
+
+            if (request.AutoReferenced.HasValue)
+            {
+                parameters["auto_referenced"] = request.AutoReferenced.Value;
+            }
+
+            if (request.DefineConstraints is { Length: > 0 })
+            {
+                var arr = new JsonArray();
+                foreach (var d in request.DefineConstraints)
+                {
+                    arr.Add(d);
+                }
+
+                parameters["define_constraints"] = arr;
+            }
+
+            if (request.NoEngineReferences.HasValue)
+            {
+                parameters["no_engine_references"] = request.NoEngineReferences.Value;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Reference))
+            {
+                parameters["reference"] = request.Reference;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.ReferenceGuid))
+            {
+                parameters["reference_guid"] = request.ReferenceGuid;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.NamePattern))
+            {
+                parameters["name_pattern"] = request.NamePattern;
+            }
+
+            if (request.MaxResults != ManageAsmdefLimits.MaxResultsDefault)
+            {
+                parameters["max_results"] = request.MaxResults;
+            }
+
+            if (request.Offset > 0)
+            {
+                parameters["offset"] = request.Offset;
+            }
+
+            var payload = await ExecuteSyncToolAsync(ToolNames.ManageAsmdef, parameters, timeoutMs, token);
+            return new ManageAsmdefResult(payload);
+        }, cancellationToken);
+    }
+
     public Task<CaptureScreenshotResult> CaptureScreenshotAsync(CaptureScreenshotRequest request, CancellationToken cancellationToken)
     {
         return _scheduler.EnqueueAsync(async token =>

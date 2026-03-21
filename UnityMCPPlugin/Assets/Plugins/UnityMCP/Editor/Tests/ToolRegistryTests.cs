@@ -21,7 +21,7 @@ namespace UnityMcpPlugin.Tests
             // Phase 2: 14 tools, Phase 3: +13 inline tools extracted
             // GetEditorStateTool はコンストラクタ引数が必要なため自動発見されない
             _registry.DiscoverAndRegister();
-            Assert.That(_registry.Count, Is.EqualTo(27));
+            Assert.That(_registry.Count, Is.EqualTo(28));
         }
 
         [Test]

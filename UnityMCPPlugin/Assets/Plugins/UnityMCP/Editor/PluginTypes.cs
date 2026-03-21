@@ -268,6 +268,77 @@ namespace UnityMcpPlugin
         [property: JsonProperty("source")] string Source);
 
 
+    // --- Assembly Definition payloads ---
+
+    internal sealed record AsmdefReferenceInfo(
+        [property: JsonProperty("name")] string Name,
+        [property: JsonProperty("guid")] string Guid);
+
+    internal sealed record AsmdefListEntry(
+        [property: JsonProperty("name")] string Name,
+        [property: JsonProperty("guid")] string Guid,
+        [property: JsonProperty("path")] string Path,
+        [property: JsonProperty("root_namespace")] string RootNamespace,
+        [property: JsonProperty("use_guids")] bool UseGuids,
+        [property: JsonProperty("source_file_count")] int SourceFileCount,
+        [property: JsonProperty("reference_count")] int ReferenceCount);
+
+    internal sealed record AsmdefListPayload(
+        [property: JsonProperty("assemblies")] AsmdefListEntry[] Assemblies,
+        [property: JsonProperty("count")] int Count,
+        [property: JsonProperty("total_count")] int TotalCount,
+        [property: JsonProperty("truncated")] bool Truncated,
+        [property: JsonProperty("next_offset", NullValueHandling = NullValueHandling.Ignore)] int? NextOffset);
+
+    internal sealed record AsmdefVersionDefineInfo(
+        [property: JsonProperty("name")] string Name,
+        [property: JsonProperty("expression")] string Expression,
+        [property: JsonProperty("define")] string Define);
+
+    internal sealed record AsmdefGetPayload(
+        [property: JsonProperty("name")] string Name,
+        [property: JsonProperty("guid")] string Guid,
+        [property: JsonProperty("path")] string Path,
+        [property: JsonProperty("root_namespace")] string RootNamespace,
+        [property: JsonProperty("references")] AsmdefReferenceInfo[] References,
+        [property: JsonProperty("use_guids")] bool UseGuids,
+        [property: JsonProperty("include_platforms")] string[] IncludePlatforms,
+        [property: JsonProperty("exclude_platforms")] string[] ExcludePlatforms,
+        [property: JsonProperty("allow_unsafe_code")] bool AllowUnsafeCode,
+        [property: JsonProperty("auto_referenced")] bool AutoReferenced,
+        [property: JsonProperty("define_constraints")] string[] DefineConstraints,
+        [property: JsonProperty("version_defines")] AsmdefVersionDefineInfo[] VersionDefines,
+        [property: JsonProperty("no_engine_references")] bool NoEngineReferences,
+        [property: JsonProperty("override_references")] bool OverrideReferences,
+        [property: JsonProperty("precompiled_references")] string[] PrecompiledReferences,
+        [property: JsonProperty("source_files")] string[] SourceFiles,
+        [property: JsonProperty("defines")] string[] Defines);
+
+    internal sealed record AsmdefCreatePayload(
+        [property: JsonProperty("name")] string Name,
+        [property: JsonProperty("guid")] string Guid,
+        [property: JsonProperty("path")] string Path);
+
+    internal sealed record AsmdefUpdatePayload(
+        [property: JsonProperty("name")] string Name,
+        [property: JsonProperty("guid")] string Guid,
+        [property: JsonProperty("path")] string Path,
+        [property: JsonProperty("updated_fields")] string[] UpdatedFields);
+
+    internal sealed record AsmdefDeletePayload(
+        [property: JsonProperty("name")] string Name,
+        [property: JsonProperty("guid")] string Guid,
+        [property: JsonProperty("path")] string Path,
+        [property: JsonProperty("deleted")] bool Deleted);
+
+    internal sealed record AsmdefReferenceChangePayload(
+        [property: JsonProperty("name")] string Name,
+        [property: JsonProperty("guid")] string Guid,
+        [property: JsonProperty("path")] string Path,
+        [property: JsonProperty("added_reference", NullValueHandling = NullValueHandling.Ignore)] AsmdefReferenceInfo AddedReference,
+        [property: JsonProperty("removed_reference", NullValueHandling = NullValueHandling.Ignore)] AsmdefReferenceInfo RemovedReference,
+        [property: JsonProperty("references")] AsmdefReferenceInfo[] References);
+
     internal sealed record RunTestsJobResult(
         [property: JsonProperty("summary")] TestSummary Summary,
         [property: JsonProperty("failed_tests")] IReadOnlyList<FailedTest> FailedTests,

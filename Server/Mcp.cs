@@ -101,6 +101,7 @@ internal sealed class McpToolService
             ToolNames.GetAssetInfo => (await _unityBridge.GetAssetInfoAsync(ParseGetAssetInfoRequest(arguments), cancellationToken)).Payload,
             ToolNames.ManageAsset => (await _unityBridge.ManageAssetAsync(ParseManageAssetRequest(arguments), cancellationToken)).Payload,
             ToolNames.CaptureScreenshot => (await _unityBridge.CaptureScreenshotAsync(ParseCaptureScreenshotRequest(arguments), cancellationToken)).Payload,
+            ToolNames.ManageAsmdef => (await _unityBridge.ManageAsmdefAsync(ParseManageAsmdefRequest(arguments), cancellationToken)).Payload,
             ToolNames.ExecuteBatch => await ExecuteBatchServerSideAsync(arguments, cancellationToken),
             _ => throw new McpException(ErrorCodes.UnknownCommand, $"Unknown tool: {toolName}"),
         };
@@ -1193,6 +1194,128 @@ internal sealed class McpToolService
         var outputPath = JsonHelpers.GetString(arguments, "output_path");
 
         return new CaptureScreenshotRequest(source, width, height, cameraPath, outputPath);
+    }
+
+    private static ManageAsmdefRequest ParseManageAsmdefRequest(JsonObject arguments)
+    {
+        var action = JsonHelpers.GetString(arguments, "action");
+        if (!ManageAsmdefActions.IsSupported(action))
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"action must be one of {ManageAsmdefActions.List}|{ManageAsmdefActions.Get}|{ManageAsmdefActions.Create}|{ManageAsmdefActions.Update}|{ManageAsmdefActions.Delete}|{ManageAsmdefActions.AddReference}|{ManageAsmdefActions.RemoveReference}",
+                new JsonObject { ["action"] = action });
+        }
+
+        var name = JsonHelpers.GetString(arguments, "name");
+        var guid = JsonHelpers.GetString(arguments, "guid");
+
+        // name / guid 排他チェック
+        if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(guid))
+        {
+            throw new McpException(ErrorCodes.InvalidParams, "Specify either 'name' or 'guid', not both");
+        }
+
+        // action ごとの必須チェック
+        if (action is ManageAsmdefActions.Get or ManageAsmdefActions.Update or ManageAsmdefActions.Delete
+            or ManageAsmdefActions.AddReference or ManageAsmdefActions.RemoveReference)
+        {
+            if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(guid))
+            {
+                throw new McpException(ErrorCodes.InvalidParams, $"'name' or 'guid' is required for '{action}' action");
+            }
+        }
+
+        if (action == ManageAsmdefActions.Create)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new McpException(ErrorCodes.InvalidParams, "'name' is required for 'create' action");
+            }
+
+            var directory = JsonHelpers.GetString(arguments, "directory");
+            if (string.IsNullOrWhiteSpace(directory))
+            {
+                throw new McpException(ErrorCodes.InvalidParams, "'directory' is required for 'create' action");
+            }
+        }
+
+        var reference = JsonHelpers.GetString(arguments, "reference");
+        var referenceGuid = JsonHelpers.GetString(arguments, "reference_guid");
+
+        // reference / reference_guid 排他チェック
+        if (!string.IsNullOrWhiteSpace(reference) && !string.IsNullOrWhiteSpace(referenceGuid))
+        {
+            throw new McpException(ErrorCodes.InvalidParams, "Specify either 'reference' or 'reference_guid', not both");
+        }
+
+        if (action is ManageAsmdefActions.AddReference or ManageAsmdefActions.RemoveReference)
+        {
+            if (string.IsNullOrWhiteSpace(reference) && string.IsNullOrWhiteSpace(referenceGuid))
+            {
+                throw new McpException(ErrorCodes.InvalidParams, $"'reference' or 'reference_guid' is required for '{action}' action");
+            }
+        }
+
+        var directory2 = JsonHelpers.GetString(arguments, "directory");
+        var rootNamespace = JsonHelpers.GetString(arguments, "root_namespace");
+        var useGuids = JsonHelpers.GetBool(arguments, "use_guids");
+
+        string[]? references = null;
+        if (arguments.TryGetPropertyValue("references", out var refsNode) && refsNode is JsonArray refsArray)
+        {
+            references = refsArray
+                .Select(n => n?.GetValue<string>())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToArray()!;
+        }
+
+        string[]? includePlatforms = null;
+        if (arguments.TryGetPropertyValue("include_platforms", out var ipNode) && ipNode is JsonArray ipArray)
+        {
+            includePlatforms = ipArray.Select(n => n?.GetValue<string>()).Where(s => !string.IsNullOrWhiteSpace(s)).ToArray()!;
+        }
+
+        string[]? excludePlatforms = null;
+        if (arguments.TryGetPropertyValue("exclude_platforms", out var epNode) && epNode is JsonArray epArray)
+        {
+            excludePlatforms = epArray.Select(n => n?.GetValue<string>()).Where(s => !string.IsNullOrWhiteSpace(s)).ToArray()!;
+        }
+
+        string[]? defineConstraints = null;
+        if (arguments.TryGetPropertyValue("define_constraints", out var dcNode) && dcNode is JsonArray dcArray)
+        {
+            defineConstraints = dcArray.Select(n => n?.GetValue<string>()).Where(s => !string.IsNullOrWhiteSpace(s)).ToArray()!;
+        }
+
+        var allowUnsafeCode = JsonHelpers.GetBool(arguments, "allow_unsafe_code");
+        var autoReferenced = JsonHelpers.GetBool(arguments, "auto_referenced");
+        var noEngineReferences = JsonHelpers.GetBool(arguments, "no_engine_references");
+
+        var namePattern = JsonHelpers.GetString(arguments, "name_pattern");
+        var maxResults = JsonHelpers.GetInt(arguments, "max_results") ?? ManageAsmdefLimits.MaxResultsDefault;
+        if (maxResults is < ManageAsmdefLimits.MaxResultsMin or > ManageAsmdefLimits.MaxResultsMax)
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"max_results must be between {ManageAsmdefLimits.MaxResultsMin} and {ManageAsmdefLimits.MaxResultsMax}",
+                new JsonObject { ["max_results"] = maxResults });
+        }
+
+        var offset = JsonHelpers.GetInt(arguments, "offset") ?? 0;
+        if (offset < 0)
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                "offset must be >= 0",
+                new JsonObject { ["offset"] = offset });
+        }
+
+        return new ManageAsmdefRequest(
+            action!, name, guid, directory2, rootNamespace,
+            references, useGuids, includePlatforms, excludePlatforms,
+            allowUnsafeCode, autoReferenced, defineConstraints, noEngineReferences,
+            reference, referenceGuid, namePattern, maxResults, offset);
     }
 
 }

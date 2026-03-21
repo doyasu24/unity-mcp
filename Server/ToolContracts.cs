@@ -39,6 +39,7 @@ internal static class ToolNames
     public const string ManageAsset = "manage_asset";
     public const string CaptureScreenshot = "capture_screenshot";
     public const string ExecuteBatch = "execute_batch";
+    public const string ManageAsmdef = "manage_asmdef";
 }
 
 internal static class ToolLimits
@@ -408,4 +409,54 @@ internal static class ExecuteBatchLimits
 {
     public const int MaxOperations = 50;
 }
+
+internal static class ManageAsmdefActions
+{
+    public const string List = "list";
+    public const string Get = "get";
+    public const string Create = "create";
+    public const string Update = "update";
+    public const string Delete = "delete";
+    public const string AddReference = "add_reference";
+    public const string RemoveReference = "remove_reference";
+
+    public static bool IsSupported(string? action)
+    {
+        return action is List or Get or Create or Update or Delete or AddReference or RemoveReference;
+    }
+
+    public static JsonArray ToJsonArray()
+    {
+        return new JsonArray(List, Get, Create, Update, Delete, AddReference, RemoveReference);
+    }
+}
+
+internal static class ManageAsmdefLimits
+{
+    public const int MaxResultsMin = 1;
+    public const int MaxResultsMax = 1000;
+    public const int MaxResultsDefault = 100;
+}
+
+internal sealed record ManageAsmdefRequest(
+    string Action,
+    string? Name,
+    string? Guid,
+    string? Directory,
+    string? RootNamespace,
+    string[]? References,
+    bool? UseGuids,
+    string[]? IncludePlatforms,
+    string[]? ExcludePlatforms,
+    bool? AllowUnsafeCode,
+    bool? AutoReferenced,
+    string[]? DefineConstraints,
+    bool? NoEngineReferences,
+    string? Reference,
+    string? ReferenceGuid,
+    string? NamePattern,
+    int MaxResults,
+    int Offset);
+
+internal sealed record ManageAsmdefResult(JsonNode Payload);
 

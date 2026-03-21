@@ -807,6 +807,122 @@ internal static class ToolCatalog
                 ["required"] = new JsonArray("operations"),
                 ["additionalProperties"] = false,
             }),
+        [ToolNames.ManageAsmdef] = new(
+            ToolNames.ManageAsmdef,
+            10000,
+            30000,
+            false,
+            "Manages Unity Assembly Definition (.asmdef) files: list/get assemblies, create/update/delete definitions, and add/remove assembly references. Identify assemblies by name or GUID (mutually exclusive).",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["action"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = ManageAsmdefActions.ToJsonArray(),
+                        ["description"] = "Operation to perform. list: list all assemblies. get: get detailed info. create: create new asmdef. update: update properties. delete: delete asmdef. add_reference/remove_reference: manage references.",
+                    },
+                    ["name"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Assembly name. Mutually exclusive with 'guid'. Required for get/update/delete/add_reference/remove_reference (unless guid is specified). Required for create.",
+                    },
+                    ["guid"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Assembly definition asset GUID. Mutually exclusive with 'name'. Use for get/update/delete/add_reference/remove_reference.",
+                    },
+                    ["directory"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Directory path for new asmdef (e.g. \"Assets/Scripts/Core\"). Required for 'create' action.",
+                    },
+                    ["root_namespace"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Root namespace for the assembly.",
+                    },
+                    ["references"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject { ["type"] = "string" },
+                        ["description"] = "Assembly references. Accepts names (\"Unity.Mathematics\") and GUID format (\"GUID:xxx\"), can be mixed. For create: initial references. For update: replaces entire list.",
+                    },
+                    ["use_guids"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["default"] = true,
+                        ["description"] = "Store references as GUID format. Only for 'create' action. Default true.",
+                    },
+                    ["include_platforms"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject { ["type"] = "string" },
+                        ["description"] = "Platforms to include (e.g. [\"Editor\"]). Empty = all platforms.",
+                    },
+                    ["exclude_platforms"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject { ["type"] = "string" },
+                        ["description"] = "Platforms to exclude.",
+                    },
+                    ["allow_unsafe_code"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["description"] = "Allow unsafe C# code.",
+                    },
+                    ["auto_referenced"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["description"] = "Auto-reference in project.",
+                    },
+                    ["define_constraints"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject { ["type"] = "string" },
+                        ["description"] = "Define constraints.",
+                    },
+                    ["no_engine_references"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["description"] = "Disable Unity engine references.",
+                    },
+                    ["reference"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Assembly name to add/remove. Mutually exclusive with 'reference_guid'. For add_reference/remove_reference actions.",
+                    },
+                    ["reference_guid"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Assembly GUID to add/remove. Mutually exclusive with 'reference'. For add_reference/remove_reference actions.",
+                    },
+                    ["name_pattern"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Regex filter for assembly names (case-insensitive). For 'list' action.",
+                    },
+                    ["max_results"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = ManageAsmdefLimits.MaxResultsMin,
+                        ["maximum"] = ManageAsmdefLimits.MaxResultsMax,
+                        ["default"] = ManageAsmdefLimits.MaxResultsDefault,
+                        ["description"] = "Maximum results for 'list' action.",
+                    },
+                    ["offset"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 0,
+                        ["default"] = 0,
+                        ["description"] = "Skip count for 'list' action.",
+                    },
+                },
+                ["required"] = new JsonArray("action"),
+                ["additionalProperties"] = false,
+            }),
     };
 
     public static JsonArray BuildMcpTools()

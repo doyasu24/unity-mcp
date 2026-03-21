@@ -30,6 +30,7 @@ namespace UnityMcpPlugin
         internal const string FindPrefabGameObjects = "find_prefab_game_objects";
         internal const string ManageAsset = "manage_asset";
         internal const string CaptureScreenshot = "capture_screenshot";
+        internal const string ManageAsmdef = "manage_asmdef";
     }
 
     internal static class ToolLimits
@@ -165,6 +166,38 @@ namespace UnityMcpPlugin
         {
             return action == Enable || action == Disable;
         }
+    }
+
+    internal static class ManageAsmdefActions
+    {
+        internal const string List = "list";
+        internal const string Get = "get";
+        internal const string Create = "create";
+        internal const string Update = "update";
+        internal const string Delete = "delete";
+        internal const string AddReference = "add_reference";
+        internal const string RemoveReference = "remove_reference";
+
+        internal static bool IsSupported(string action)
+        {
+            return action == List || action == Get || action == Create || action == Update
+                || action == Delete || action == AddReference || action == RemoveReference;
+        }
+    }
+
+    internal static class AsmdefErrors
+    {
+        internal const string NotFound = "ERR_ASMDEF_NOT_FOUND";
+        internal const string AlreadyExists = "ERR_ASMDEF_ALREADY_EXISTS";
+        internal const string ReferenceNotFound = "ERR_REFERENCE_NOT_FOUND";
+        internal const string DuplicateReference = "ERR_DUPLICATE_REFERENCE";
+        internal const string ReferenceNotInAssembly = "ERR_REFERENCE_NOT_IN_ASSEMBLY";
+    }
+
+    internal static class ManageAsmdefLimits
+    {
+        internal const int MaxResultsDefault = 100;
+        internal const int MaxResultsMax = 1000;
     }
 
     internal static class ScreenshotSources
