@@ -20,17 +20,36 @@ namespace UnityMcpPlugin.Tools
                 throw new PluginException("ERR_INVALID_PARAMS", "prefab_path must end with .prefab");
             }
 
-            var prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
-            if (prefabAsset == null)
-            {
-                throw new PluginException(PrefabToolErrors.PrefabNotFound,
-                    $"Prefab not found at path: {prefabPath}");
-            }
-
             var action = Payload.GetString(parameters, "action");
             if (string.IsNullOrEmpty(action))
             {
                 throw new PluginException("ERR_INVALID_PARAMS", "action is required");
+            }
+
+            var prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            if (prefabAsset == null)
+            {
+                // create アクションの場合のみ新規プレハブを自動作成する
+                if (action != "create")
+                {
+                    throw new PluginException(PrefabToolErrors.PrefabNotFound,
+                        $"Prefab not found at path: {prefabPath}");
+                }
+
+                var parentDir = System.IO.Path.GetDirectoryName(prefabPath);
+                if (!string.IsNullOrEmpty(parentDir) && !AssetDatabase.IsValidFolder(parentDir))
+                {
+                    throw new PluginException("ERR_INVALID_PARAMS",
+                        $"Parent directory does not exist: {parentDir}");
+                }
+
+                PrefabHelper.CreateEmptyPrefab(prefabPath);
+                prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+                if (prefabAsset == null)
+                {
+                    throw new PluginException(PrefabToolErrors.PrefabNotFound,
+                        $"Failed to load newly created prefab at: {prefabPath}");
+                }
             }
 
             var root = PrefabUtility.LoadPrefabContents(prefabPath);

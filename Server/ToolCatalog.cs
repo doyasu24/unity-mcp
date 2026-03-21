@@ -164,7 +164,7 @@ internal static class ToolCatalog
                     ["root_path"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "Hierarchy path of a root GameObject to start from. Omit for entire scene/Prefab.",
+                        ["description"] = "Hierarchy path of a GameObject to scope traversal (e.g. \"/Canvas\" or \"Player/Weapon\"). Only this GameObject and its descendants are returned. Omit to return the entire scene. NOTE: this parameter is 'root_path', not 'game_object_path'.",
                     },
                     ["max_depth"] = new JsonObject
                     {
@@ -203,7 +203,7 @@ internal static class ToolCatalog
             10000,
             30000,
             false,
-            "Returns serialized field values of a specific component on a scene or Prefab GameObject.",
+            "Returns serialized field values of a specific component, or lists all components when index is omitted.",
             new JsonObject
             {
                 ["type"] = "object",
@@ -219,7 +219,7 @@ internal static class ToolCatalog
                     {
                         ["type"] = "integer",
                         ["minimum"] = 0,
-                        ["description"] = "0-based index of the component on the GameObject. Corresponds to the index from get_hierarchy output.",
+                        ["description"] = "0-based index of the component on the GameObject. When omitted, returns a lightweight list of all components with their indices instead of serialized field values.",
                     },
                     ["fields"] = new JsonObject
                     {
@@ -236,7 +236,7 @@ internal static class ToolCatalog
                         ["description"] = "Max array/List elements to expand per field. 0 returns element count only.",
                     },
                 },
-                ["required"] = new JsonArray("game_object_path", "index"),
+                ["required"] = new JsonArray("game_object_path"),
                 ["additionalProperties"] = false,
             }),
         [ToolNames.ManageComponent] = new(
@@ -584,7 +584,7 @@ internal static class ToolCatalog
             10000,
             30000,
             false,
-            "Creates, updates, deletes, or reparents GameObjects in the active scene or a Prefab asset.",
+            "Creates, updates, deletes, or reparents GameObjects in the active scene or a Prefab asset. When prefab_path is given and the prefab does not exist, 'create' action will create a new prefab file automatically.",
             new JsonObject
             {
                 ["type"] = "object",
@@ -656,7 +656,7 @@ internal static class ToolCatalog
             15000,
             30000,
             false,
-            "Manages Unity assets: create/delete (materials, folders, physic materials, animator controllers, render textures) and material operations (get/set properties, shaders, keywords).",
+            "Manages Unity assets: create/delete (materials, folders, physic materials, animator controllers, render textures, prefabs) and material operations (get/set properties, shaders, keywords).",
             new JsonObject
             {
                 ["type"] = "object",
@@ -683,7 +683,7 @@ internal static class ToolCatalog
                     {
                         ["type"] = "object",
                         ["additionalProperties"] = true,
-                        ["description"] = "For create: type-specific settings (Material: {shader_name}, RenderTexture: {width, height, depth}). For set_properties: property name-value map.",
+                        ["description"] = "For create: type-specific settings (Material: {shader_name}, RenderTexture: {width, height, depth}, Prefab: {source_game_object_path} — scene GO hierarchy path to save as prefab, omit to create empty prefab). For set_properties: property name-value map.",
                     },
                     ["overwrite"] = new JsonObject
                     {

@@ -33,10 +33,35 @@ namespace UnityMcpPlugin.Tools
                 throw new PluginException("ERR_INVALID_PARAMS", "game_object_path is required");
             }
 
+            var go = PrefabGameObjectResolver.Resolve(prefabAsset, gameObjectPath);
+            if (go == null)
+            {
+                throw new PluginException(SceneToolErrors.ObjectNotFound,
+                    $"GameObject not found in prefab: {gameObjectPath}");
+            }
+
+            var components = go.GetComponents<Component>();
             var index = Payload.GetInt(parameters, "index");
+
+            // index 省略時はコンポーネント一覧を返す
             if (!index.HasValue)
             {
-                throw new PluginException("ERR_INVALID_PARAMS", "index is required");
+                var listing = ComponentInfoTool.BuildComponentListing(go, components);
+                listing["prefab_path"] = prefabPath;
+                return listing;
+            }
+
+            if (index.Value < 0 || index.Value >= components.Length)
+            {
+                throw new PluginException(SceneToolErrors.ComponentIndexOutOfRange,
+                    $"index {index.Value} is out of range (0..{components.Length - 1})");
+            }
+
+            var component = components[index.Value];
+            if (component == null)
+            {
+                throw new PluginException(SceneToolErrors.MissingScript,
+                    $"Component at index {index.Value} is a missing script");
             }
 
             var maxArrayElements = Payload.GetInt(parameters, "max_array_elements") ?? SceneToolLimits.MaxArrayElementsDefault;
@@ -53,27 +78,6 @@ namespace UnityMcpPlugin.Tools
                         fieldFilter.Add(name);
                     }
                 }
-            }
-
-            var go = PrefabGameObjectResolver.Resolve(prefabAsset, gameObjectPath);
-            if (go == null)
-            {
-                throw new PluginException(SceneToolErrors.ObjectNotFound,
-                    $"GameObject not found in prefab: {gameObjectPath}");
-            }
-
-            var components = go.GetComponents<Component>();
-            if (index.Value < 0 || index.Value >= components.Length)
-            {
-                throw new PluginException(SceneToolErrors.ComponentIndexOutOfRange,
-                    $"index {index.Value} is out of range (0..{components.Length - 1})");
-            }
-
-            var component = components[index.Value];
-            if (component == null)
-            {
-                throw new PluginException(SceneToolErrors.MissingScript,
-                    $"Component at index {index.Value} is a missing script");
             }
 
             var context = ToolContext.ForPrefab(prefabAsset, prefabPath);

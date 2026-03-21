@@ -430,7 +430,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
     "index": {
       "type": "integer",
       "minimum": 0,
-      "description": "0-based index of the component on the GameObject. Corresponds to the index from get_hierarchy output."
+      "description": "0-based index of the component on the GameObject. When omitted, returns a lightweight list of all components with their indices instead of serialized field values."
     },
     "fields": {
       "type": "array",
@@ -445,7 +445,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
       "description": "Max array/List elements to expand per field. 0 returns element count only."
     }
   },
-  "required": ["game_object_path", "index"],
+  "required": ["game_object_path"],
   "additionalProperties": false
 }
 ```
@@ -475,6 +475,21 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 ```
 
 フィールド値のフォーマットは §3.1 の Field Value Format に従う。
+
+#### index 省略時（コンポーネント一覧モード）
+
+```json
+{
+  "game_object_path": "/Canvas/Panel",
+  "game_object_name": "Panel",
+  "mode": "list",
+  "components": [
+    { "index": 0, "component_type": "UnityEngine.RectTransform" },
+    { "index": 1, "component_type": "UnityEngine.UI.Image" }
+  ],
+  "count": 2
+}
+```
 
 ### 9.3 動作ルール
 

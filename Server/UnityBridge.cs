@@ -13,7 +13,7 @@ internal readonly record struct EditorReadyWaitPolicy(TimeSpan Timeout, string T
 
 internal sealed class UnityBridge
 {
-    private static readonly TimeSpan ActiveSessionRejectLogThrottle = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan LifecycleLogThrottleInterval = TimeSpan.FromSeconds(30);
 
     private sealed class PendingRequest : IDisposable
     {
@@ -40,13 +40,13 @@ internal sealed class UnityBridge
     private readonly RequestScheduler _scheduler;
     private readonly UnitySessionRegistry _sessionRegistry = new();
     private readonly ConcurrentDictionary<string, PendingRequest> _pendingRequests = new(StringComparer.Ordinal);
-    private readonly object _activeSessionRejectLogGate = new();
+    private readonly LogThrottle _sessionConnectLog = new(LifecycleLogThrottleInterval);
+    private readonly LogThrottle _sessionDisconnectLog = new(LifecycleLogThrottleInterval);
+    private readonly LogThrottle _sessionRejectLog = new(LifecycleLogThrottleInterval);
 
     private CancellationTokenSource? _staleTimerCts;
     private long _lastMessageReceivedAtUtcTicks;
     private int _shutdownRequested;
-    private DateTimeOffset _lastActiveSessionRejectLogUtc;
-    private int _suppressedActiveSessionRejectLogs;
 
     public UnityBridge(RuntimeState runtimeState, RequestScheduler scheduler)
     {
@@ -335,22 +335,24 @@ internal sealed class UnityBridge
             return JsonHelpers.CloneNode(response["result"]) ?? new JsonObject();
         }
 
-        var errorDetails = JsonHelpers.AsObjectOrEmpty(JsonHelpers.CloneNode(response));
-        var pluginErrorCode = JsonHelpers.GetString(errorDetails, "error_code");
-        var pluginMessage = JsonHelpers.GetString(errorDetails, "message");
+        // プラグインはエラーを result オブジェクト内に { code, message } として返す
+        var errorResult = JsonHelpers.AsObjectOrEmpty(JsonHelpers.CloneNode(response["result"]));
+        var pluginErrorCode = JsonHelpers.GetString(errorResult, "code");
+        var pluginMessage = JsonHelpers.GetString(errorResult, "message");
+
+        // プラグイン固有のエラーコードをそのまま転送（LLM が具体的な原因を判断できるようにする）
+        var errorCode = !string.IsNullOrWhiteSpace(pluginErrorCode)
+            ? pluginErrorCode
+            : ErrorCodes.UnityExecution;
+
         var wrappedDetails = new JsonObject();
         if (!string.IsNullOrWhiteSpace(pluginErrorCode))
         {
             wrappedDetails["plugin_error_code"] = pluginErrorCode;
         }
 
-        if (!string.IsNullOrWhiteSpace(pluginMessage))
-        {
-            wrappedDetails["message"] = pluginMessage;
-        }
-
         throw new McpException(
-            ErrorCodes.UnityExecution,
+            errorCode,
             pluginMessage ?? "Unity returned execution error",
             wrappedDetails);
     }
@@ -390,9 +392,13 @@ internal sealed class UnityBridge
             var parameters = new JsonObject
             {
                 ["game_object_path"] = request.GameObjectPath,
-                ["index"] = request.Index,
                 ["max_array_elements"] = request.MaxArrayElements,
             };
+            if (request.Index.HasValue)
+            {
+                parameters["index"] = request.Index.Value;
+            }
+
             if (request.Fields is not null)
             {
                 var fieldsArray = new JsonArray();
@@ -482,9 +488,13 @@ internal sealed class UnityBridge
             {
                 ["prefab_path"] = request.PrefabPath,
                 ["game_object_path"] = request.GameObjectPath,
-                ["index"] = request.Index,
                 ["max_array_elements"] = request.MaxArrayElements,
             };
+            if (request.Index.HasValue)
+            {
+                parameters["index"] = request.Index.Value;
+            }
+
             if (request.Fields is not null)
             {
                 var fieldsArray = new JsonArray();
@@ -1244,13 +1254,18 @@ internal sealed class UnityBridge
         _runtimeState.OnConnected(initialState, connectionId, editorInstanceId);
         StartStaleTimer(socket, connectionId, editorInstanceId);
 
-        Logger.Info(
-            "Unity websocket session activated",
-            ("connection_id", connectionId),
-            ("editor_instance_id", editorInstanceId),
-            ("plugin_session_id", pluginSessionId),
-            ("connect_attempt_seq", connectAttemptSeq),
-            ("editor_state", initialState.ToWire()));
+        var (shouldLog, suppressed) = _sessionConnectLog.Check();
+        if (shouldLog)
+        {
+            Logger.Info(
+                "Unity websocket session activated",
+                ("connection_id", connectionId),
+                ("editor_instance_id", editorInstanceId),
+                ("plugin_session_id", pluginSessionId),
+                ("connect_attempt_seq", connectAttemptSeq),
+                ("editor_state", initialState.ToWire()),
+                ("suppressed", suppressed > 0 ? suppressed : null));
+        }
     }
 
     private async Task ReplaceActiveSessionAsync(WebSocket replacedSocket)
@@ -1260,10 +1275,15 @@ internal sealed class UnityBridge
         FailPendingRequestsAsDisconnected();
         _runtimeState.OnDisconnected();
         await SafeCloseSocketAsync(replacedSocket, WebSocketCloseStatus.NormalClosure, "replaced-by-same-editor", CancellationToken.None);
-        Logger.Info(
-            "Unity websocket session replaced existing active session for same editor",
-            ("replaced_connection_id", snapshot.ActiveConnectionId),
-            ("editor_instance_id", snapshot.EditorInstanceId));
+        var (shouldLog, suppressed) = _sessionDisconnectLog.Check();
+        if (shouldLog)
+        {
+            Logger.Info(
+                "Unity websocket session replaced existing active session for same editor",
+                ("replaced_connection_id", snapshot.ActiveConnectionId),
+                ("editor_instance_id", snapshot.EditorInstanceId),
+                ("suppressed", suppressed > 0 ? suppressed : null));
+        }
     }
 
     private void HandleEditorStatus(JsonObject message)
@@ -1464,10 +1484,15 @@ internal sealed class UnityBridge
         _runtimeState.OnDisconnected();
         if (wasConnected && !IsShuttingDown())
         {
-            Logger.Info(
-                "Unity websocket session disconnected",
-                ("connection_id", snapshot.ActiveConnectionId),
-                ("editor_instance_id", snapshot.EditorInstanceId));
+            var (shouldLog, suppressed) = _sessionDisconnectLog.Check();
+            if (shouldLog)
+            {
+                Logger.Info(
+                    "Unity websocket session disconnected",
+                    ("connection_id", snapshot.ActiveConnectionId),
+                    ("editor_instance_id", snapshot.EditorInstanceId),
+                    ("suppressed", suppressed > 0 ? suppressed : null));
+            }
         }
     }
 
@@ -1503,38 +1528,9 @@ internal sealed class UnityBridge
 
     private void LogRejectedActiveSessionWarning(string? editorInstanceId, string? pluginSessionId, ulong? connectAttemptSeq)
     {
-        int suppressed = 0;
-        var shouldEmit = false;
-        var now = DateTimeOffset.UtcNow;
-        lock (_activeSessionRejectLogGate)
-        {
-            var sinceLast = now - _lastActiveSessionRejectLogUtc;
-            if (_lastActiveSessionRejectLogUtc != default && sinceLast < ActiveSessionRejectLogThrottle)
-            {
-                _suppressedActiveSessionRejectLogs += 1;
-                return;
-            }
-
-            shouldEmit = true;
-            suppressed = _suppressedActiveSessionRejectLogs;
-            _suppressedActiveSessionRejectLogs = 0;
-            _lastActiveSessionRejectLogUtc = now;
-        }
-
+        var (shouldEmit, suppressed) = _sessionRejectLog.Check();
         if (!shouldEmit)
         {
-            return;
-        }
-
-        if (suppressed > 0)
-        {
-            Logger.Warn(
-                "Rejected Unity websocket session because another editor is active",
-                ("suppressed", suppressed),
-                ("throttle_sec", (int)ActiveSessionRejectLogThrottle.TotalSeconds),
-                ("editor_instance_id", editorInstanceId),
-                ("plugin_session_id", pluginSessionId),
-                ("connect_attempt_seq", connectAttemptSeq));
             return;
         }
 
@@ -1542,7 +1538,9 @@ internal sealed class UnityBridge
             "Rejected Unity websocket session because another editor is active",
             ("editor_instance_id", editorInstanceId),
             ("plugin_session_id", pluginSessionId),
-            ("connect_attempt_seq", connectAttemptSeq));
+            ("connect_attempt_seq", connectAttemptSeq),
+            ("suppressed", suppressed > 0 ? suppressed : null),
+            ("throttle_sec", suppressed > 0 ? (int)LifecycleLogThrottleInterval.TotalSeconds : null));
     }
 
     private static async Task SendRawAsync(WebSocket socket, JsonObject payload, CancellationToken cancellationToken)

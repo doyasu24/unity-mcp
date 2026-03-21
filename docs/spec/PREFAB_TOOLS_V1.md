@@ -248,7 +248,7 @@ Prefab 内のパス解決を担う。
     "index": {
       "type": "integer",
       "minimum": 0,
-      "description": "0-based component index from get_hierarchy."
+      "description": "0-based component index from get_hierarchy. When omitted, returns a lightweight list of all components with their indices."
     },
     "fields": {
       "type": "array",
@@ -263,7 +263,7 @@ Prefab 内のパス解決を担う。
       "description": "Maximum number of array/List elements to expand per field."
     }
   },
-  "required": ["prefab_path", "game_object_path", "index"],
+  "required": ["prefab_path", "game_object_path"],
   "additionalProperties": false
 }
 ```
@@ -296,6 +296,23 @@ Prefab 内のパス解決を担う。
 ```
 
 フィールド値のフォーマットは Scene 仕様 §3.1 の Field Value Format に従う。参照の判別は §3.2 のロジックを使用。
+
+#### index 省略時（コンポーネント一覧モード）
+
+```json
+{
+  "prefab_path": "Assets/Prefabs/Player.prefab",
+  "game_object_path": "",
+  "game_object_name": "Player",
+  "mode": "list",
+  "components": [
+    { "index": 0, "component_type": "UnityEngine.Transform" },
+    { "index": 1, "component_type": "UnityEngine.Animator" },
+    { "index": 2, "component_type": "MyGame.PlayerController" }
+  ],
+  "count": 3
+}
+```
 
 ### 6.3 動作ルール
 

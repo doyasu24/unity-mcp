@@ -195,7 +195,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
     },
     "asset_type": {
       "type": "string",
-      "enum": ["material", "folder", "physic_material", "animator_controller", "render_texture"],
+      "enum": ["material", "folder", "physic_material", "animator_controller", "render_texture", "prefab"],
       "description": "Type of asset to create. Required for 'create' action."
     },
     "properties": {
@@ -369,7 +369,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
 1. **Play Mode ガード**: Play Mode 中は `ERR_PLAY_MODE_ACTIVE` を返す。
 
 #### `create`
-1. `asset_type` 必須。サポート: `material`, `folder`, `physic_material`, `animator_controller`, `render_texture`。
+1. `asset_type` 必須。サポート: `material`, `folder`, `physic_material`, `animator_controller`, `render_texture`, `prefab`。
 2. 親ディレクトリの存在チェック（`folder` 以外）。存在しない場合は `ERR_INVALID_PARAMS`。
 3. `overwrite=false`（デフォルト）でアセットが既に存在する場合は `ERR_ASSET_EXISTS`。
 4. 型ごとの作成処理:
@@ -378,6 +378,7 @@ timeout 列は `default_timeout_ms / max_timeout_ms`。
    - `physic_material`: `new PhysicsMaterial()` で作成。
    - `animator_controller`: `AnimatorController.CreateAnimatorControllerAtPath(path)` で作成。
    - `render_texture`: `new RenderTexture(width, height, depth)` で作成。`properties.width/height/depth` で設定可能（デフォルト: 256x256, depth=24）。
+   - `prefab`: `asset_path` は `.prefab` で終わる必要あり。`properties.source_game_object_path` 指定時はシーン上の GameObject をプレハブとして保存。省略時は空のプレハブを作成。
 5. `AssetDatabase.SaveAssets()` で保存。
 
 #### `delete`

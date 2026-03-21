@@ -148,10 +148,11 @@ namespace UnityMcpPlugin
         internal const string PhysicMaterial = "physic_material";
         internal const string AnimatorController = "animator_controller";
         internal const string RenderTexture = "render_texture";
+        internal const string Prefab = "prefab";
 
         internal static bool IsSupported(string type)
         {
-            return type == Material || type == Folder || type == PhysicMaterial || type == AnimatorController || type == RenderTexture;
+            return type == Material || type == Folder || type == PhysicMaterial || type == AnimatorController || type == RenderTexture || type == Prefab;
         }
     }
 

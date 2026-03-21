@@ -104,7 +104,7 @@ public sealed class ToolCatalogTests
     }
 
     [Fact]
-    public void BuildMcpTools_GetComponentInfoSchema_RequiresGameObjectPathAndIndex()
+    public void BuildMcpTools_GetComponentInfoSchema_RequiresGameObjectPath_IndexOptional()
     {
         var tools = ToolCatalog.BuildMcpTools();
         var getComponentInfo = AssertToolExists(tools, ToolNames.GetComponentInfo);
@@ -113,7 +113,8 @@ public sealed class ToolCatalogTests
 
         var requiredNames = required.Select(n => n?.GetValue<string>()).ToList();
         Assert.Contains("game_object_path", requiredNames);
-        Assert.Contains("index", requiredNames);
+        // index は省略可能（省略時はコンポーネント一覧モード）
+        Assert.DoesNotContain("index", requiredNames);
     }
 
     [Fact]

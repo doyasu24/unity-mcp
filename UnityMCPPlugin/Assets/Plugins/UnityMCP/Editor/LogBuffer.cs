@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using UnityEditor.Compilation;
 using UnityEngine;
 
 namespace UnityMcpPlugin
@@ -23,6 +24,9 @@ namespace UnityMcpPlugin
 
             _initialized = true;
             Application.logMessageReceivedThreaded += OnLogMessageReceived;
+            // コンパイルエラー/警告は Application.logMessageReceivedThreaded を経由しないため、
+            // CompilationPipeline 経由で個別に取り込む
+            CompilationPipeline.assemblyCompilationFinished += OnAssemblyCompilationFinished;
         }
 
         internal static void Shutdown()
@@ -33,6 +37,7 @@ namespace UnityMcpPlugin
             }
 
             Application.logMessageReceivedThreaded -= OnLogMessageReceived;
+            CompilationPipeline.assemblyCompilationFinished -= OnAssemblyCompilationFinished;
             _initialized = false;
         }
 
@@ -201,6 +206,50 @@ namespace UnityMcpPlugin
                     condition ?? string.Empty,
                     stackTrace ?? string.Empty,
                     null));
+
+                if (Entries.Count > MaxEntries)
+                {
+                    Entries.RemoveRange(0, Entries.Count - MaxEntries);
+                }
+            }
+        }
+
+        /// <summary>
+        /// CompilationPipeline.assemblyCompilationFinished コールバック。
+        /// コンパイラが報告するエラー/警告をバッファに取り込む。
+        /// </summary>
+        private static void OnAssemblyCompilationFinished(string assemblyPath, CompilerMessage[] messages)
+        {
+            if (messages == null || messages.Length == 0)
+            {
+                return;
+            }
+
+            lock (Gate)
+            {
+                for (var i = 0; i < messages.Length; i += 1)
+                {
+                    var msg = messages[i];
+                    string wireType;
+                    if (msg.type == CompilerMessageType.Error)
+                    {
+                        wireType = ConsoleLogTypes.Error;
+                    }
+                    else if (msg.type == CompilerMessageType.Warning)
+                    {
+                        wireType = ConsoleLogTypes.Warning;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+
+                    Entries.Add(new ConsoleEntry(
+                        wireType,
+                        msg.message ?? string.Empty,
+                        string.Empty,
+                        null));
+                }
 
                 if (Entries.Count > MaxEntries)
                 {

@@ -428,12 +428,7 @@ internal sealed class McpToolService
         }
 
         var index = JsonHelpers.GetInt(arguments, "index");
-        if (!index.HasValue)
-        {
-            throw new McpException(ErrorCodes.InvalidParams, "index is required");
-        }
-
-        if (index.Value < 0)
+        if (index.HasValue && index.Value < 0)
         {
             throw new McpException(
                 ErrorCodes.InvalidParams,
@@ -459,7 +454,7 @@ internal sealed class McpToolService
                 new JsonObject { ["max_array_elements"] = maxArrayElements });
         }
 
-        return new GetSceneComponentInfoRequest(gameObjectPath, index.Value, fields, maxArrayElements);
+        return new GetSceneComponentInfoRequest(gameObjectPath, index, fields, maxArrayElements);
     }
 
     private static ManageSceneComponentRequest ParseManageSceneComponentRequest(JsonObject arguments)
@@ -737,12 +732,7 @@ internal sealed class McpToolService
         }
 
         var index = JsonHelpers.GetInt(arguments, "index");
-        if (!index.HasValue)
-        {
-            throw new McpException(ErrorCodes.InvalidParams, "index is required");
-        }
-
-        if (index.Value < 0)
+        if (index.HasValue && index.Value < 0)
         {
             throw new McpException(
                 ErrorCodes.InvalidParams,
@@ -768,7 +758,7 @@ internal sealed class McpToolService
                 new JsonObject { ["max_array_elements"] = maxArrayElements });
         }
 
-        return new GetPrefabComponentInfoRequest(prefabPath, gameObjectPath, index.Value, fields, maxArrayElements);
+        return new GetPrefabComponentInfoRequest(prefabPath, gameObjectPath, index, fields, maxArrayElements);
     }
 
     private static ManagePrefabComponentRequest ParseManagePrefabComponentRequest(JsonObject arguments)
@@ -1113,7 +1103,7 @@ internal sealed class McpToolService
             {
                 throw new McpException(
                     ErrorCodes.InvalidParams,
-                    $"asset_type must be one of {AssetTypes.Material}|{AssetTypes.Folder}|{AssetTypes.PhysicMaterial}|{AssetTypes.AnimatorController}|{AssetTypes.RenderTexture}",
+                    $"asset_type must be one of {AssetTypes.Material}|{AssetTypes.Folder}|{AssetTypes.PhysicMaterial}|{AssetTypes.AnimatorController}|{AssetTypes.RenderTexture}|{AssetTypes.Prefab}",
                     new JsonObject { ["asset_type"] = assetType });
             }
         }

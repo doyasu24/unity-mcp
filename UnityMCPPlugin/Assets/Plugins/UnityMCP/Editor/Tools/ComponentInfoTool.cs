@@ -14,10 +14,33 @@ namespace UnityMcpPlugin.Tools
                 throw new PluginException("ERR_INVALID_PARAMS", "game_object_path is required");
             }
 
+            var go = GameObjectResolver.Resolve(gameObjectPath);
+            if (go == null)
+            {
+                throw new PluginException(SceneToolErrors.ObjectNotFound,
+                    $"GameObject not found: {gameObjectPath}");
+            }
+
+            var components = go.GetComponents<Component>();
             var index = Payload.GetInt(parameters, "index");
+
+            // index 省略時はコンポーネント一覧を返す（フィールド値の展開なし）
             if (!index.HasValue)
             {
-                throw new PluginException("ERR_INVALID_PARAMS", "index is required");
+                return BuildComponentListing(go, components);
+            }
+
+            if (index.Value < 0 || index.Value >= components.Length)
+            {
+                throw new PluginException(SceneToolErrors.ComponentIndexOutOfRange,
+                    $"index {index.Value} is out of range (0..{components.Length - 1})");
+            }
+
+            var component = components[index.Value];
+            if (component == null)
+            {
+                throw new PluginException(SceneToolErrors.MissingScript,
+                    $"Component at index {index.Value} is a missing script");
             }
 
             var maxArrayElements = Payload.GetInt(parameters, "max_array_elements") ?? SceneToolLimits.MaxArrayElementsDefault;
@@ -34,27 +57,6 @@ namespace UnityMcpPlugin.Tools
                         fieldFilter.Add(name);
                     }
                 }
-            }
-
-            var go = GameObjectResolver.Resolve(gameObjectPath);
-            if (go == null)
-            {
-                throw new PluginException(SceneToolErrors.ObjectNotFound,
-                    $"GameObject not found: {gameObjectPath}");
-            }
-
-            var components = go.GetComponents<Component>();
-            if (index.Value < 0 || index.Value >= components.Length)
-            {
-                throw new PluginException(SceneToolErrors.ComponentIndexOutOfRange,
-                    $"index {index.Value} is out of range (0..{components.Length - 1})");
-            }
-
-            var component = components[index.Value];
-            if (component == null)
-            {
-                throw new PluginException(SceneToolErrors.MissingScript,
-                    $"Component at index {index.Value} is a missing script");
             }
 
             var serializeResult = FieldSerializer.Serialize(component, fieldFilter, maxArrayElements);
@@ -74,6 +76,38 @@ namespace UnityMcpPlugin.Tools
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// index 省略時に呼ばれる軽量なコンポーネント一覧レスポンスを構築する。
+        /// </summary>
+        internal static JObject BuildComponentListing(GameObject go, Component[] components)
+        {
+            var listing = new JArray();
+            for (var i = 0; i < components.Length; i++)
+            {
+                var c = components[i];
+                var entry = new JObject
+                {
+                    ["index"] = i,
+                    ["component_type"] = c != null ? c.GetType().FullName : null,
+                };
+                if (c == null)
+                {
+                    entry["is_missing_script"] = true;
+                }
+
+                listing.Add(entry);
+            }
+
+            return new JObject
+            {
+                ["game_object_path"] = GameObjectResolver.GetHierarchyPath(go),
+                ["game_object_name"] = go.name,
+                ["mode"] = "list",
+                ["components"] = listing,
+                ["count"] = components.Length,
+            };
         }
     }
 }

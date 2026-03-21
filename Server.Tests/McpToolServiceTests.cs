@@ -59,16 +59,18 @@ public sealed class McpToolServiceTests
     }
 
     [Fact]
-    public async Task CallToolAsync_ReturnsError_ForGetComponentInfo_MissingIndex()
+    public async Task CallToolAsync_DispatchesToBridge_ForGetComponentInfo_WithoutIndex()
     {
+        // index 省略時はコンポーネント一覧モードとしてブリッジにディスパッチされる
         var service = CreateService(new RuntimeState());
 
         var args = new JsonObject { ["game_object_path"] = "/Player" };
         var result = await service.CallToolAsync(ToolNames.GetComponentInfo, args, CancellationToken.None);
 
+        // Unity 未接続のためエラーになるが、パラメータバリデーションは通過している
         Assert.True(result["isError"]?.GetValue<bool>());
         var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
-        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+        Assert.NotEqual(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
     }
 
     [Fact]
@@ -142,8 +144,9 @@ public sealed class McpToolServiceTests
     }
 
     [Fact]
-    public async Task CallToolAsync_ReturnsError_ForGetComponentInfo_PrefabMode_MissingIndex()
+    public async Task CallToolAsync_DispatchesToBridge_ForGetComponentInfo_PrefabMode_WithoutIndex()
     {
+        // index 省略時はコンポーネント一覧モードとしてブリッジにディスパッチされる
         var service = CreateService(new RuntimeState());
 
         var args = new JsonObject
@@ -153,9 +156,10 @@ public sealed class McpToolServiceTests
         };
         var result = await service.CallToolAsync(ToolNames.GetComponentInfo, args, CancellationToken.None);
 
+        // Unity 未接続のためエラーになるが、パラメータバリデーションは通過している
         Assert.True(result["isError"]?.GetValue<bool>());
         var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
-        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+        Assert.NotEqual(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
     }
 
     [Fact]

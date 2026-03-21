@@ -153,6 +153,11 @@ internal static class Logger
 
         foreach (var (key, value) in context)
         {
+            if (value is null)
+            {
+                continue;
+            }
+
             sb.Append("  \x1b[36m");
             sb.Append(key);
             sb.Append("\x1b[0m=");
@@ -174,6 +179,47 @@ internal static class Logger
             JsonNode node => node.ToJsonString(JsonDefaults.Options),
             _ => value.ToString() ?? "null",
         };
+    }
+}
+
+/// <summary>
+/// 同一カテゴリのログを時間ウィンドウ内で抑制し、抑制件数を次回 emit 時に返す。
+/// スレッドセーフ。テスト時は clock を注入可能。
+/// </summary>
+internal sealed class LogThrottle
+{
+    private readonly TimeSpan _interval;
+    private readonly Func<DateTimeOffset> _clock;
+    private readonly object _gate = new();
+    private DateTimeOffset _lastEmitUtc;
+    private int _suppressedCount;
+
+    public LogThrottle(TimeSpan interval, Func<DateTimeOffset>? clock = null)
+    {
+        _interval = interval;
+        _clock = clock ?? (() => DateTimeOffset.UtcNow);
+    }
+
+    /// <returns>
+    /// <c>ShouldEmit</c>: true なら呼び出し元はログを出力すべき。
+    /// <c>Suppressed</c>: 前回 emit から抑制されたイベント数（ShouldEmit=true のときのみ有効）。
+    /// </returns>
+    public (bool ShouldEmit, int Suppressed) Check()
+    {
+        lock (_gate)
+        {
+            var now = _clock();
+            if (_lastEmitUtc != default && (now - _lastEmitUtc) < _interval)
+            {
+                _suppressedCount++;
+                return (false, 0);
+            }
+
+            var suppressed = _suppressedCount;
+            _suppressedCount = 0;
+            _lastEmitUtc = now;
+            return (true, suppressed);
+        }
     }
 }
 

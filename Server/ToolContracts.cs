@@ -250,7 +250,7 @@ internal sealed record GetSceneHierarchyRequest(string? RootPath, int MaxDepth, 
 
 internal sealed record GetSceneHierarchyResult(JsonNode Payload);
 
-internal sealed record GetSceneComponentInfoRequest(string GameObjectPath, int Index, string[]? Fields, int MaxArrayElements);
+internal sealed record GetSceneComponentInfoRequest(string GameObjectPath, int? Index, string[]? Fields, int MaxArrayElements);
 
 internal sealed record GetSceneComponentInfoResult(JsonNode Payload);
 
@@ -262,7 +262,7 @@ internal sealed record GetPrefabHierarchyRequest(string PrefabPath, string? Game
 
 internal sealed record GetPrefabHierarchyResult(JsonNode Payload);
 
-internal sealed record GetPrefabComponentInfoRequest(string PrefabPath, string GameObjectPath, int Index, string[]? Fields, int MaxArrayElements);
+internal sealed record GetPrefabComponentInfoRequest(string PrefabPath, string GameObjectPath, int? Index, string[]? Fields, int MaxArrayElements);
 
 internal sealed record GetPrefabComponentInfoResult(JsonNode Payload);
 
@@ -340,15 +340,16 @@ internal static class AssetTypes
     public const string PhysicMaterial = "physic_material";
     public const string AnimatorController = "animator_controller";
     public const string RenderTexture = "render_texture";
+    public const string Prefab = "prefab";
 
     public static bool IsSupported(string? type)
     {
-        return type is Material or Folder or PhysicMaterial or AnimatorController or RenderTexture;
+        return type is Material or Folder or PhysicMaterial or AnimatorController or RenderTexture or Prefab;
     }
 
     public static JsonArray ToJsonArray()
     {
-        return new JsonArray(Material, Folder, PhysicMaterial, AnimatorController, RenderTexture);
+        return new JsonArray(Material, Folder, PhysicMaterial, AnimatorController, RenderTexture, Prefab);
     }
 }
 
