@@ -6,9 +6,11 @@ using UnityEngine.SceneManagement;
 
 namespace UnityMcpPlugin.Tools
 {
-    internal static class SceneHierarchyTool
+    internal sealed class SceneHierarchyTool : SyncToolHandler
     {
-        internal static object Execute(JObject parameters)
+        public override string ToolName => ToolNames.GetSceneHierarchy;
+
+        public override object Execute(JObject parameters)
         {
             var rootPath = Payload.GetString(parameters, "root_path");
             var maxDepth = Payload.GetInt(parameters, "max_depth") ?? SceneToolLimits.MaxDepthDefault;

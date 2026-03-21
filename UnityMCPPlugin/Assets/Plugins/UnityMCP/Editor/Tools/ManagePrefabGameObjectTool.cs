@@ -5,9 +5,11 @@ using UnityEngine;
 
 namespace UnityMcpPlugin.Tools
 {
-    internal static class ManagePrefabGameObjectTool
+    internal sealed class ManagePrefabGameObjectTool : SyncToolHandler
     {
-        internal static object Execute(JObject parameters)
+        public override string ToolName => ToolNames.ManagePrefabGameObject;
+
+        public override object Execute(JObject parameters)
         {
             var prefabPath = Payload.GetString(parameters, "prefab_path");
             if (string.IsNullOrEmpty(prefabPath))

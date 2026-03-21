@@ -6,9 +6,11 @@ using UnityEngine;
 
 namespace UnityMcpPlugin.Tools
 {
-    internal static class ManageGameObjectTool
+    internal sealed class ManageGameObjectTool : SyncToolHandler
     {
-        internal static object Execute(JObject parameters)
+        public override string ToolName => ToolNames.ManageSceneGameObject;
+
+        public override object Execute(JObject parameters)
         {
             if (EditorApplication.isPlaying)
             {

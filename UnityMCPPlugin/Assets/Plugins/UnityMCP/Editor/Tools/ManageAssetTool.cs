@@ -5,9 +5,11 @@ using UnityEngine;
 
 namespace UnityMcpPlugin.Tools
 {
-    internal static class ManageAssetTool
+    internal sealed class ManageAssetTool : SyncToolHandler
     {
-        internal static object Execute(JObject parameters)
+        public override string ToolName => ToolNames.ManageAsset;
+
+        public override object Execute(JObject parameters)
         {
             if (EditorApplication.isPlaying)
             {

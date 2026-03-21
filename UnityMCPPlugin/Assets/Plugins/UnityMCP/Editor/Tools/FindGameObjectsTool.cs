@@ -7,9 +7,11 @@ using UnityEngine.SceneManagement;
 
 namespace UnityMcpPlugin.Tools
 {
-    internal static class FindGameObjectsTool
+    internal sealed class FindGameObjectsTool : SyncToolHandler
     {
-        internal static FindSceneGameObjectsPayload Execute(JObject parameters)
+        public override string ToolName => ToolNames.FindSceneGameObjects;
+
+        public override object Execute(JObject parameters)
         {
             var nameFilter = Payload.GetString(parameters, "name");
             var tagFilter = Payload.GetString(parameters, "tag");

@@ -4,9 +4,11 @@ using UnityEngine;
 
 namespace UnityMcpPlugin.Tools
 {
-    internal static class GetAssetInfoTool
+    internal sealed class GetAssetInfoTool : SyncToolHandler
     {
-        internal static GetAssetInfoPayload Execute(JObject parameters)
+        public override string ToolName => ToolNames.GetAssetInfo;
+
+        public override object Execute(JObject parameters)
         {
             var assetPath = Payload.GetString(parameters, "asset_path");
             if (string.IsNullOrEmpty(assetPath))

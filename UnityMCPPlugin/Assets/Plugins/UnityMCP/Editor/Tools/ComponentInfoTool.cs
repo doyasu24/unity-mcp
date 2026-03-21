@@ -4,9 +4,11 @@ using UnityEngine;
 
 namespace UnityMcpPlugin.Tools
 {
-    internal static class ComponentInfoTool
+    internal sealed class ComponentInfoTool : SyncToolHandler
     {
-        internal static object Execute(JObject parameters)
+        public override string ToolName => ToolNames.GetSceneComponentInfo;
+
+        public override object Execute(JObject parameters)
         {
             var gameObjectPath = Payload.GetString(parameters, "game_object_path");
             if (string.IsNullOrEmpty(gameObjectPath))

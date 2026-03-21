@@ -7,9 +7,11 @@ using UnityEngine;
 
 namespace UnityMcpPlugin.Tools
 {
-    internal static class FindPrefabGameObjectsTool
+    internal sealed class FindPrefabGameObjectsTool : SyncToolHandler
     {
-        internal static FindPrefabGameObjectsPayload Execute(JObject parameters)
+        public override string ToolName => ToolNames.FindPrefabGameObjects;
+
+        public override object Execute(JObject parameters)
         {
             var prefabPath = Payload.GetString(parameters, "prefab_path");
             if (string.IsNullOrEmpty(prefabPath))

@@ -6,9 +6,11 @@ using UnityEngine;
 
 namespace UnityMcpPlugin.Tools
 {
-    internal static class ManagePrefabComponentTool
+    internal sealed class ManagePrefabComponentTool : SyncToolHandler
     {
-        internal static object Execute(JObject parameters)
+        public override string ToolName => ToolNames.ManagePrefabComponent;
+
+        public override object Execute(JObject parameters)
         {
             var prefabPath = Payload.GetString(parameters, "prefab_path");
             if (string.IsNullOrEmpty(prefabPath))

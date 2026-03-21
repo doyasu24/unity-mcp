@@ -5,9 +5,11 @@ using UnityEngine;
 
 namespace UnityMcpPlugin.Tools
 {
-    internal static class PrefabHierarchyTool
+    internal sealed class PrefabHierarchyTool : SyncToolHandler
     {
-        internal static object Execute(JObject parameters)
+        public override string ToolName => ToolNames.GetPrefabHierarchy;
+
+        public override object Execute(JObject parameters)
         {
             var prefabPath = Payload.GetString(parameters, "prefab_path");
             if (string.IsNullOrEmpty(prefabPath))

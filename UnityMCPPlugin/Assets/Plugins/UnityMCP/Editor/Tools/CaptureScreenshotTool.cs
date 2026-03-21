@@ -4,9 +4,11 @@ using UnityEngine;
 
 namespace UnityMcpPlugin.Tools
 {
-    internal static class CaptureScreenshotTool
+    internal sealed class CaptureScreenshotTool : SyncToolHandler
     {
-        internal static CaptureScreenshotPayload Execute(JObject parameters)
+        public override string ToolName => ToolNames.CaptureScreenshot;
+
+        public override object Execute(JObject parameters)
         {
             var source = Payload.GetString(parameters, "source") ?? ScreenshotSources.GameView;
             if (!ScreenshotSources.IsSupported(source))

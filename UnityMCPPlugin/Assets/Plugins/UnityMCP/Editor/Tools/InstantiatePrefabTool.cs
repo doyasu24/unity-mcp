@@ -5,9 +5,11 @@ using UnityEngine;
 
 namespace UnityMcpPlugin.Tools
 {
-    internal static class InstantiatePrefabTool
+    internal sealed class InstantiatePrefabTool : SyncToolHandler
     {
-        internal static InstantiatePrefabPayload Execute(JObject parameters)
+        public override string ToolName => ToolNames.InstantiatePrefab;
+
+        public override object Execute(JObject parameters)
         {
             if (EditorApplication.isPlaying)
             {
