@@ -186,28 +186,17 @@ internal sealed class UnityBridge
             var stoppedPlayMode = await EnsureEditModeAsync(token);
 
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RefreshAssets);
-            try
+            var payload = await ExecuteWithRecompileRecoveryAsync(
+                ToolNames.RefreshAssets, new JsonObject(), timeoutMs,
+                () => new JsonObject { ["refreshed"] = true },
+                token);
+
+            if (stoppedPlayMode && payload is JsonObject payloadObj)
             {
-                var payload = await ExecuteSyncToolAsync(ToolNames.RefreshAssets, new JsonObject(), timeoutMs, token);
-                if (stoppedPlayMode && payload is JsonObject payloadObj)
-                {
-                    payloadObj["stopped_play_mode"] = true;
-                }
-                return new RefreshAssetsResult(payload);
+                payloadObj["stopped_play_mode"] = true;
             }
-            catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
-            {
-                // Assembly reload after script compilation disconnects the Plugin before
-                // the response arrives. Wait for the Editor to reconnect and return success
-                // since the refresh was executed.
-                await EnsureEditorReadyAsync(token);
-                var result = new JsonObject { ["refreshed"] = true };
-                if (stoppedPlayMode)
-                {
-                    result["stopped_play_mode"] = true;
-                }
-                return new RefreshAssetsResult(result);
-            }
+
+            return new RefreshAssetsResult(payload);
         }, cancellationToken);
     }
 
@@ -260,6 +249,15 @@ internal sealed class UnityBridge
         return _scheduler.EnqueueAsync(async token =>
         {
             await EnsureEditorReadyAsync(token);
+
+            // Play Mode 開始前にコンパイルエラーがないことを確認する。
+            // EditorApplication.isPlaying = true はリクエストであり、コンパイルエラーがあると
+            // Unity が黙って拒否するため、サーバー側で事前検証して明確なエラーを返す。
+            if (string.Equals(request.Action, PlayModeActions.Start, StringComparison.Ordinal))
+            {
+                await ThrowIfCompileErrorsAsync(token);
+            }
+
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ControlPlayMode);
             try
             {
@@ -1086,33 +1084,53 @@ internal sealed class UnityBridge
 
             var isMutation = request.Action is not (ManageAsmdefActions.List or ManageAsmdefActions.Get);
 
-            try
+            if (isMutation)
             {
-                var payload = await ExecuteSyncToolAsync(ToolNames.ManageAsmdef, parameters, timeoutMs, token);
-                if (isMutation)
-                {
-                    // asmdef 変更後のドメインリロードで Plugin が切断される場合がある。
-                    // レスポンスが届いた場合でもリロードが始まることがあるため、Editor の Ready 状態を確認する。
-                    await EnsureEditorReadyAsync(token);
-                    await AppendCompileErrorsIfAny(payload, token);
-                }
-
+                var actionForFallback = request.Action;
+                var payload = await ExecuteWithRecompileRecoveryAsync(
+                    ToolNames.ManageAsmdef, parameters, timeoutMs,
+                    () => new JsonObject { ["action"] = actionForFallback },
+                    token);
                 return new ManageAsmdefResult(payload);
             }
-            catch (McpException ex) when (isMutation && ex.Code == ErrorCodes.ReconnectTimeout)
-            {
-                // asmdef 変更によるコンパイル → ドメインリロードで Plugin が切断された。
-                // 変更自体は ImportAsset 時に完了しているため、再接続を待って成功を返す。
-                await EnsureEditorReadyAsync(token);
-                var result = new JsonObject
-                {
-                    ["action"] = request.Action,
-                    ["recompiled"] = true,
-                };
-                await AppendCompileErrorsIfAny(result, token);
-                return new ManageAsmdefResult(result);
-            }
+
+            var readPayload = await ExecuteSyncToolAsync(ToolNames.ManageAsmdef, parameters, timeoutMs, token);
+            return new ManageAsmdefResult(readPayload);
         }, cancellationToken);
+    }
+
+    /// <summary>
+    /// リコンパイルを伴うミューテーション操作の共通実行ヘルパー。
+    /// 成功時もドメインリロードが後追いで発生しうるため EnsureEditorReadyAsync で待機し、
+    /// コンパイルエラーがあれば payload に追加する。
+    /// ReconnectTimeout 時は操作自体は Editor 側で完了済みとみなし、
+    /// フォールバック結果を構築して同様に処理する。
+    /// スケジューラ内部から呼び出す前提。
+    /// </summary>
+    private async Task<JsonNode> ExecuteWithRecompileRecoveryAsync(
+        string toolName,
+        JsonObject parameters,
+        int timeoutMs,
+        Func<JsonObject> buildFallbackResult,
+        CancellationToken token)
+    {
+        try
+        {
+            var payload = await ExecuteSyncToolAsync(toolName, parameters, timeoutMs, token);
+            // レスポンス到着後もドメインリロードが後追いで発生しうる
+            await EnsureEditorReadyAsync(token);
+            await AppendCompileErrorsIfAny(payload, token);
+            return payload;
+        }
+        catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+        {
+            // ミューテーションは Editor 側で完了済み。再接続を待って成功を返す。
+            await EnsureEditorReadyAsync(token);
+            var result = buildFallbackResult();
+            result["recompiled"] = true;
+            await AppendCompileErrorsIfAny(result, token);
+            return result;
+        }
     }
 
     /// <summary>
@@ -1146,6 +1164,33 @@ internal sealed class UnityBridge
         catch
         {
             // コンソール読み取り失敗は無視（本体の操作は成功している）
+        }
+    }
+
+    /// <summary>
+    /// コンパイルエラーがあれば McpException をスローする。
+    /// Play Mode 開始前など、コンパイルが通っていることが前提条件となる操作の事前チェックに使う。
+    /// スケジューラ内部から呼び出す前提（EnsureEditorReadyAsync 済み）。
+    /// </summary>
+    private async Task ThrowIfCompileErrorsAsync(CancellationToken token)
+    {
+        var consoleTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ReadConsole);
+        var consoleParams = new JsonObject
+        {
+            ["max_entries"] = 50,
+            ["log_type"] = new JsonArray("error"),
+        };
+        var consolePayload = await ExecuteSyncToolAsync(ToolNames.ReadConsole, consoleParams, consoleTimeoutMs, token);
+
+        if (consolePayload is JsonObject consoleObj &&
+            consoleObj.TryGetPropertyValue("entries", out var entriesNode) &&
+            entriesNode is JsonArray entries &&
+            entries.Count > 0)
+        {
+            throw new McpException(
+                ErrorCodes.CompileErrors,
+                "Cannot enter play mode: compilation errors exist",
+                new JsonObject { ["compile_errors"] = entries.DeepClone() });
         }
     }
 

@@ -32,6 +32,7 @@ internal static class ErrorSemanticsResolver
             ErrorCodes.EditorNotReady => new ErrorSemantics(true, ExecutionGuarantees.NotExecuted, RecoveryActions.RetryAllowed),
             ErrorCodes.CompileTimeout => new ErrorSemantics(true, ExecutionGuarantees.NotExecuted, RecoveryActions.RetryAllowed),
             ErrorCodes.UnityDisconnected => new ErrorSemantics(true, ExecutionGuarantees.NotExecuted, RecoveryActions.RetryAllowed),
+            ErrorCodes.CompileErrors => new ErrorSemantics(false, ExecutionGuarantees.NotExecuted, RecoveryActions.InspectStateThenRetryIfNeeded),
             ErrorCodes.ReconnectTimeout => new ErrorSemantics(false, ExecutionGuarantees.Unknown, RecoveryActions.InspectStateThenRetryIfNeeded),
             ErrorCodes.RequestTimeout => new ErrorSemantics(false, ExecutionGuarantees.Unknown, RecoveryActions.InspectStateThenRetryIfNeeded),
             _ => new ErrorSemantics(false, ExecutionGuarantees.Unknown, RecoveryActions.InspectStateThenRetryIfNeeded),

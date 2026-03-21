@@ -38,6 +38,7 @@ internal static class ErrorCodes
     public const string QueueFull = "ERR_QUEUE_FULL";
     public const string UnityExecution = "ERR_UNITY_EXECUTION";
     public const string InvalidResponse = "ERR_INVALID_RESPONSE";
+    public const string CompileErrors = "ERR_COMPILE_ERRORS";
 }
 
 internal static class ConfigLoader

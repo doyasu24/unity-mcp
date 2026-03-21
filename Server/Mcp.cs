@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
@@ -176,6 +177,28 @@ internal sealed class McpToolService
                 results.Add(BuildOpResult(toolName, false, null, ex.Message));
                 failed++;
                 if (stopOnError) stopped = true;
+            }
+        }
+
+        // --- Post-batch: リコンパイルを伴うツールが実行された場合、Editor Ready を最終確認 ---
+        // 個別操作のリカバリは各 bridge メソッド内で完結するが、
+        // バッチ全体の完了時に Editor が Ready であることをバッチレベルで保証する。
+        // _runtimeState を直接使い、スケジューラを経由しない（因果的分離を避ける）。
+        // stopped == true の場合でも、既に実行された操作がリコンパイルを引き起こしている可能性がある。
+        var executedCount = succeeded + failed;
+        if (executedCount > 0 && validated.Take(executedCount).Any(v => ToolCatalog.Items[v.ToolName].MayTriggerRecompile))
+        {
+            try
+            {
+                if (!_runtimeState.IsEditorReady())
+                {
+                    var waitPolicy = UnityBridge.ResolveEditorReadyWaitPolicy(_runtimeState.GetSnapshot());
+                    await _runtimeState.WaitForEditorReadyAsync(waitPolicy.Timeout, ct);
+                }
+            }
+            catch
+            {
+                // post-batch ready check は non-fatal
             }
         }
 

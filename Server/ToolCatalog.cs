@@ -8,7 +8,8 @@ internal sealed record ToolMetadata(
     int MaxTimeoutMs,
     bool RequiresClientRequestId,
     string Description,
-    JsonObject InputSchema);
+    JsonObject InputSchema,
+    bool MayTriggerRecompile = false);
 
 internal static class ToolCatalog
 {
@@ -98,7 +99,8 @@ internal static class ToolCatalog
             300000,
             false,
             "Refreshes Unity Editor assets. Triggers recompilation if scripts changed and waits for completion. Automatically stops play mode if active.",
-            EmptyObjectSchema()),
+            EmptyObjectSchema(),
+            MayTriggerRecompile: true),
         [ToolNames.ControlPlayMode] = new(
             ToolNames.ControlPlayMode,
             10000,
@@ -922,7 +924,8 @@ internal static class ToolCatalog
                 },
                 ["required"] = new JsonArray("action"),
                 ["additionalProperties"] = false,
-            }),
+            },
+            MayTriggerRecompile: true),
     };
 
     public static JsonArray BuildMcpTools()
