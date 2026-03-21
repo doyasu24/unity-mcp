@@ -809,8 +809,8 @@ internal static class ToolCatalog
             }),
         [ToolNames.ManageAsmdef] = new(
             ToolNames.ManageAsmdef,
-            10000,
-            30000,
+            120000,
+            300000,
             false,
             "Manages Unity Assembly Definition (.asmdef) files: list/get assemblies, create/update/delete definitions, and add/remove assembly references. Identify assemblies by name or GUID (mutually exclusive).",
             new JsonObject

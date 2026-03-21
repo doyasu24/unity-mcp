@@ -1084,9 +1084,69 @@ internal sealed class UnityBridge
                 parameters["offset"] = request.Offset;
             }
 
-            var payload = await ExecuteSyncToolAsync(ToolNames.ManageAsmdef, parameters, timeoutMs, token);
-            return new ManageAsmdefResult(payload);
+            var isMutation = request.Action is not (ManageAsmdefActions.List or ManageAsmdefActions.Get);
+
+            try
+            {
+                var payload = await ExecuteSyncToolAsync(ToolNames.ManageAsmdef, parameters, timeoutMs, token);
+                if (isMutation)
+                {
+                    // asmdef 変更後のドメインリロードで Plugin が切断される場合がある。
+                    // レスポンスが届いた場合でもリロードが始まることがあるため、Editor の Ready 状態を確認する。
+                    await EnsureEditorReadyAsync(token);
+                    await AppendCompileErrorsIfAny(payload, token);
+                }
+
+                return new ManageAsmdefResult(payload);
+            }
+            catch (McpException ex) when (isMutation && ex.Code == ErrorCodes.ReconnectTimeout)
+            {
+                // asmdef 変更によるコンパイル → ドメインリロードで Plugin が切断された。
+                // 変更自体は ImportAsset 時に完了しているため、再接続を待って成功を返す。
+                await EnsureEditorReadyAsync(token);
+                var result = new JsonObject
+                {
+                    ["action"] = request.Action,
+                    ["recompiled"] = true,
+                };
+                await AppendCompileErrorsIfAny(result, token);
+                return new ManageAsmdefResult(result);
+            }
         }, cancellationToken);
+    }
+
+    /// <summary>
+    /// コンパイルエラーがあれば payload に compile_errors フィールドを追加する。
+    /// 再接続後に read_console でエラーを取得し、コンパイル関連のエラーを抽出する。
+    /// スケジューラ内部から呼び出す前提（EnsureEditorReadyAsync 済み）。
+    /// </summary>
+    private async Task AppendCompileErrorsIfAny(JsonNode payload, CancellationToken token)
+    {
+        try
+        {
+            var consoleTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ReadConsole);
+            var consoleParams = new JsonObject
+            {
+                ["max_entries"] = 50,
+                ["log_type"] = new JsonArray("error"),
+            };
+            var consolePayload = await ExecuteSyncToolAsync(ToolNames.ReadConsole, consoleParams, consoleTimeoutMs, token);
+
+            if (consolePayload is JsonObject consoleObj &&
+                consoleObj.TryGetPropertyValue("entries", out var entriesNode) &&
+                entriesNode is JsonArray entries &&
+                entries.Count > 0)
+            {
+                if (payload is JsonObject payloadObj)
+                {
+                    payloadObj["compile_errors"] = entries.DeepClone();
+                }
+            }
+        }
+        catch
+        {
+            // コンソール読み取り失敗は無視（本体の操作は成功している）
+        }
     }
 
     public Task<CaptureScreenshotResult> CaptureScreenshotAsync(CaptureScreenshotRequest request, CancellationToken cancellationToken)
