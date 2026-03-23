@@ -197,6 +197,19 @@ internal sealed class UnityBridge
                 () => new JsonObject { ["refreshed"] = true },
                 token);
 
+            // ライブチェック: ExecuteWithRecompileRecoveryAsync のフォールバックパスで
+            // コンパイルを検知できなかった場合の安全弁。
+            // ドメインリロードが今まさに発生中の場合は ReconnectTimeout 等でリカバリ。
+            try
+            {
+                await EnsureNotCompilingLiveAsync(token);
+            }
+            catch (McpException ex) when (ex.Code is ErrorCodes.ReconnectTimeout
+                or ErrorCodes.UnityDisconnected or ErrorCodes.RequestTimeout)
+            {
+                await EnsureEditorReadyAsync(token);
+            }
+
             return new RefreshAssetsResult(payload);
         }, cancellationToken);
     }

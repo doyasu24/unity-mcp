@@ -18,7 +18,21 @@ namespace UnityMcpPlugin
             runtime.Initialize();
 
             CompilationPipeline.compilationStarted += _ => runtime.PublishEditorState(EditorBridgeState.Compiling);
-            CompilationPipeline.compilationFinished += _ => runtime.PublishEditorState(EditorBridgeState.Ready);
+            // compilationFinished は beforeAssemblyReload の前に発火する。
+            // ここで即座に Ready を publish すると Server の EnsureEditorReadyAsync が
+            // ドメインリロード前に return してしまう。
+            // delayCall で次フレームまで遅延:
+            //  - ドメインリロードが続く場合: delayCall はリロードで破棄。
+            //    リロード後の [InitializeOnLoad] コンストラクタが Ready を publish。
+            //  - リロード不要の場合 (コンパイルエラー等): 次フレームで Ready を publish。
+            CompilationPipeline.compilationFinished += _ =>
+            {
+                EditorApplication.delayCall += () =>
+                {
+                    if (EditorApplication.isCompiling) return;
+                    runtime.PublishEditorState(EditorBridgeState.Ready);
+                };
+            };
             AssemblyReloadEvents.beforeAssemblyReload += () =>
             {
                 runtime.PublishEditorState(EditorBridgeState.Reloading);
