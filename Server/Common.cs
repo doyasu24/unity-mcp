@@ -20,6 +20,12 @@ internal static class Constants
     public const int EditorStatusIntervalMs = 5_000;
     public const int RequestReconnectWaitMs = 45000;
     public const int CompileGraceTimeoutMs = 90000;
+    /// <summary>
+    /// ミューテーション操作後にコンパイル開始を待つウィンドウ (ms)。
+    /// Plugin は compilationStarted コールバックで即座に editor_status(compiling) を送信するため、
+    /// 500ms 以内に検知可能。isCompiling が true なら即座にスキップされる。
+    /// </summary>
+    public const int PostMutationSettleMs = 500;
     public const string McpSessionHeader = "Mcp-Session-Id";
     public const string DefaultMcpProtocolVersion = "2025-03-26";
 }

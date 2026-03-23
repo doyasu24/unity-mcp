@@ -256,6 +256,52 @@ internal sealed class RuntimeState
         }
     }
 
+    /// <summary>
+    /// 指定ウィンドウ内でエディタ状態が Ready 以外に遷移したかを検知する。
+    /// ExecuteWithRecompileRecoveryAsync の post-mutation 安定化待機に使用。
+    /// 遷移検知なら true、ウィンドウ内に遷移がなければ false を返す。
+    /// </summary>
+    public async Task<bool> WaitForStateTransitionAsync(TimeSpan window, CancellationToken cancellationToken)
+    {
+        if (!IsEditorReady())
+        {
+            return true;
+        }
+
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Handler()
+        {
+            if (!IsEditorReady())
+            {
+                tcs.TrySetResult(true);
+            }
+        }
+
+        StateChanged += Handler;
+        try
+        {
+            // subscribe 後の再チェックで TOCTOU を防ぐ
+            if (!IsEditorReady())
+            {
+                return true;
+            }
+
+            var delayTask = Task.Delay(window, cancellationToken);
+            var completed = await Task.WhenAny(tcs.Task, delayTask);
+            if (completed == tcs.Task)
+            {
+                return true;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return false;
+        }
+        finally
+        {
+            StateChanged -= Handler;
+        }
+    }
+
     private WaitingReason GetEffectiveWaitingReasonLocked(DateTimeOffset now)
     {
         if (_connected)

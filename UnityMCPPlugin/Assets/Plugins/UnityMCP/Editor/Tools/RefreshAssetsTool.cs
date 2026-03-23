@@ -16,7 +16,9 @@ namespace UnityMcpPlugin.Tools
         public override object Execute(JObject parameters)
         {
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
-            return new RefreshAssetsPayload(true);
+            // Refresh 完了直後にメインスレッド上で isCompiling をチェック。
+            // コンパイルが既に開始されていれば true を返し、Server 側で完了まで待機させる。
+            return new RefreshAssetsPayload(true, EditorApplication.isCompiling);
         }
     }
 }

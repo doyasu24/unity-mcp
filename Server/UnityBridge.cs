@@ -183,18 +183,13 @@ internal sealed class UnityBridge
             await EnsureEditorReadyAsync(token);
 
             // Play モード中は AssetDatabase.Refresh が動作しないため、先に停止する
-            var stoppedPlayMode = await EnsureEditModeAsync(token);
+            await EnsureEditModeAsync(token);
 
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RefreshAssets);
             var payload = await ExecuteWithRecompileRecoveryAsync(
                 ToolNames.RefreshAssets, new JsonObject(), timeoutMs,
                 () => new JsonObject { ["refreshed"] = true },
                 token);
-
-            if (stoppedPlayMode && payload is JsonObject payloadObj)
-            {
-                payloadObj["stopped_play_mode"] = true;
-            }
 
             return new RefreshAssetsResult(payload);
         }, cancellationToken);
@@ -1117,9 +1112,45 @@ internal sealed class UnityBridge
         try
         {
             var payload = await ExecuteSyncToolAsync(toolName, parameters, timeoutMs, token);
-            // レスポンス到着後もドメインリロードが後追いで発生しうる
-            await EnsureEditorReadyAsync(token);
-            await AppendCompileErrorsIfAny(payload, token);
+
+            // Plugin が compiling フラグを返した場合は確実にコンパイル完了まで待機。
+            // 旧 Plugin は compiling を返さないため null → false → フォールバックパスへ。
+            // compiling は Plugin→Server 間の内部シグナルのため、読み取り後に除去する。
+            var compiling = payload is JsonObject payloadObj
+                && (JsonHelpers.GetBool(payloadObj, "compiling") ?? false);
+            if (payload is JsonObject po)
+            {
+                po.Remove("compiling");
+            }
+
+            // コンパイル検知: Plugin の compiling フラグまたは state 遷移を使う。
+            // いずれの場合も _runtimeState がコンパイル状態に追随するまで待ち、
+            // その後 EnsureEditorReadyAsync でコンパイル完了を待機する。
+            var settleWindow = TimeSpan.FromMilliseconds(Constants.PostMutationSettleMs);
+
+            if (compiling)
+            {
+                // Plugin が compiling を報告。ただし _runtimeState にはまだ
+                // editor_status(compiling) が到着していない可能性がある。
+                // WaitForStateTransitionAsync で _runtimeState の追随を待つ。
+                Logger.Info("Post-mutation compilation reported by plugin, waiting for editor ready",
+                    ("tool", toolName));
+                await _runtimeState.WaitForStateTransitionAsync(settleWindow, token);
+                await EnsureEditorReadyAsync(token);
+            }
+            else
+            {
+                // フォールバック: isCompiling がまだ false だったケース用。
+                var compilationDetected = await _runtimeState.WaitForStateTransitionAsync(settleWindow, token);
+                if (compilationDetected)
+                {
+                    Logger.Info("Post-mutation compilation detected via state transition, waiting for editor ready",
+                        ("tool", toolName));
+                    await EnsureEditorReadyAsync(token);
+                }
+            }
+
+            await AppendErrorsIfAny(payload, token);
             return payload;
         }
         catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
@@ -1127,18 +1158,17 @@ internal sealed class UnityBridge
             // ミューテーションは Editor 側で完了済み。再接続を待って成功を返す。
             await EnsureEditorReadyAsync(token);
             var result = buildFallbackResult();
-            result["recompiled"] = true;
-            await AppendCompileErrorsIfAny(result, token);
+            await AppendErrorsIfAny(result, token);
             return result;
         }
     }
 
     /// <summary>
-    /// コンパイルエラーがあれば payload に compile_errors フィールドを追加する。
-    /// 再接続後に read_console でエラーを取得し、コンパイル関連のエラーを抽出する。
+    /// コンソールにエラーがあれば payload に errors フィールドを追加する。
+    /// コンパイルエラー、アセットインポートエラー等を含む。
     /// スケジューラ内部から呼び出す前提（EnsureEditorReadyAsync 済み）。
     /// </summary>
-    private async Task AppendCompileErrorsIfAny(JsonNode payload, CancellationToken token)
+    private async Task AppendErrorsIfAny(JsonNode payload, CancellationToken token)
     {
         try
         {
@@ -1157,7 +1187,7 @@ internal sealed class UnityBridge
             {
                 if (payload is JsonObject payloadObj)
                 {
-                    payloadObj["compile_errors"] = entries.DeepClone();
+                    payloadObj["errors"] = entries.DeepClone();
                 }
             }
         }
@@ -1190,7 +1220,7 @@ internal sealed class UnityBridge
             throw new McpException(
                 ErrorCodes.CompileErrors,
                 "Cannot enter play mode: compilation errors exist",
-                new JsonObject { ["compile_errors"] = entries.DeepClone() });
+                new JsonObject { ["errors"] = entries.DeepClone() });
         }
     }
 
@@ -1226,6 +1256,11 @@ internal sealed class UnityBridge
         return _scheduler.EnqueueAsync(async token =>
         {
             await EnsureEditorReadyAsync(token);
+
+            // live-check: キャッシュされた _runtimeState ではなく Plugin に直接問い合わせ。
+            // refresh_assets 後の editor_status メッセージが Server に未到着のケースを防ぐ。
+            await EnsureNotCompilingLiveAsync(token);
+
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RunTests);
 
             var parameters = new JsonObject
@@ -1669,6 +1704,33 @@ internal sealed class UnityBridge
         if (!resumed)
         {
             throw new McpException(waitPolicy.TimeoutErrorCode, waitPolicy.TimeoutErrorMessage);
+        }
+    }
+
+    /// <summary>
+    /// Plugin に get_editor_state を直接問い合わせ、コンパイル中ならコンパイル完了まで待機する。
+    /// キャッシュされた _runtimeState ではなく Plugin 側の EditorStateTracker を参照するため、
+    /// WebSocket の editor_status メッセージが未到着でもコンパイル状態を検知できる。
+    /// </summary>
+    private async Task EnsureNotCompilingLiveAsync(CancellationToken token)
+    {
+        var editorStateTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetEditorState);
+        var statePayload = await ExecuteSyncToolAsync(
+            ToolNames.GetEditorState, new JsonObject(), editorStateTimeoutMs, token);
+
+        var editorState = statePayload is JsonObject stateObj
+            ? JsonHelpers.GetString(stateObj, "editor_state")
+            : null;
+
+        if (editorState is "compiling" or "reloading")
+        {
+            // Plugin はコンパイル中だが _runtimeState にはまだ反映されていない可能性がある。
+            // WaitForStateTransitionAsync で _runtimeState の追随を待ってからコンパイル完了を待機。
+            Logger.Info("Live-check detected compilation in progress, waiting for editor ready",
+                ("editor_state", editorState));
+            var settleWindow = TimeSpan.FromMilliseconds(Constants.PostMutationSettleMs);
+            await _runtimeState.WaitForStateTransitionAsync(settleWindow, token);
+            await EnsureEditorReadyAsync(token);
         }
     }
 

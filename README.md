@@ -19,7 +19,7 @@ graph LR
 | `control_play_mode` | Edit: controls Unity Editor play mode (start, stop, pause). |
 | `read_console` | Reads Unity console entries. |
 | `clear_console` | Clears Unity Console log entries. |
-| `refresh_assets` | Refreshes Unity Editor assets. |
+| `refresh_assets` | Refreshes Unity Editor assets. Waits for recompilation if scripts changed. Returns errors when present. |
 | `run_tests` | Runs Unity tests and returns the result. |
 | **Scene Management** | |
 | `list_scenes` | Lists all scene files in the Unity project. |

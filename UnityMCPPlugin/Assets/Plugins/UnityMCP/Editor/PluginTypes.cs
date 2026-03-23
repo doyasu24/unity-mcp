@@ -110,7 +110,8 @@ namespace UnityMcpPlugin
         [property: JsonProperty("cleared_count")] int ClearedCount);
 
     internal sealed record RefreshAssetsPayload(
-        [property: JsonProperty("refreshed")] bool Refreshed);
+        [property: JsonProperty("refreshed")] bool Refreshed,
+        [property: JsonProperty("compiling")] bool Compiling);
 
     internal sealed record PlayModeStatePayload(
         [property: JsonProperty("state")] string State,

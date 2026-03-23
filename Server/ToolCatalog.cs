@@ -98,7 +98,7 @@ internal static class ToolCatalog
             120000,
             300000,
             false,
-            "Refreshes Unity Editor assets. Triggers recompilation if scripts changed and waits for completion. Automatically stops play mode if active.",
+            "Refreshes Unity Editor assets. If scripts changed, waits for recompilation to complete before returning. Returns errors (compile errors, import errors) in the 'errors' field when present. Automatically stops play mode if active.",
             EmptyObjectSchema(),
             MayTriggerRecompile: true),
         [ToolNames.ControlPlayMode] = new(
@@ -814,7 +814,7 @@ internal static class ToolCatalog
             120000,
             300000,
             false,
-            "Manages Unity Assembly Definition (.asmdef) files: list/get assemblies, create/update/delete definitions, and add/remove assembly references. Identify assemblies by name or GUID (mutually exclusive).",
+            "Manages Unity Assembly Definition (.asmdef) files: list/get assemblies, create/update/delete definitions, and add/remove assembly references. Identify assemblies by name or GUID (mutually exclusive). Mutation actions wait for recompilation to complete. Returns errors in the 'errors' field when present.",
             new JsonObject
             {
                 ["type"] = "object",
