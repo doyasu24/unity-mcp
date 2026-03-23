@@ -4,6 +4,8 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using ZLogger;
 
 namespace UnityMcpServer;
 
@@ -11,11 +13,13 @@ internal sealed class McpToolService
 {
     private readonly RuntimeState _runtimeState;
     private readonly UnityBridge _unityBridge;
+    private readonly ILogger<McpToolService> _logger;
 
-    public McpToolService(RuntimeState runtimeState, UnityBridge unityBridge)
+    public McpToolService(RuntimeState runtimeState, UnityBridge unityBridge, ILogger<McpToolService> logger)
     {
         _runtimeState = runtimeState;
         _unityBridge = unityBridge;
+        _logger = logger;
     }
 
     public async Task<JsonObject> CallToolAsync(string toolName, JsonObject arguments, CancellationToken cancellationToken)
@@ -24,20 +28,24 @@ internal sealed class McpToolService
         {
             var payload = await ExecuteToolAsync(toolName, arguments, cancellationToken);
 
+            // スクリーンショットは base64 が大きいため結果ログを省略
             if (string.Equals(toolName, ToolNames.CaptureScreenshot, StringComparison.Ordinal))
             {
+                _logger.ZLogInformation($"{toolName} {arguments} → (screenshot)");
                 return FormatScreenshotResult(payload);
             }
 
+            _logger.ZLogInformation($"{toolName} {arguments} → {payload}");
             return ToolResultFormatter.Success(payload);
         }
         catch (McpException ex)
         {
+            _logger.ZLogWarning($"{toolName} {arguments} → {ex.Code}: {ex.Message}");
             return ToolResultFormatter.Error(ex);
         }
         catch (Exception ex)
         {
-            Logger.Error("Tool call unexpected error", ("tool", toolName), ("error", ex));
+            _logger.ZLogError(ex, $"{toolName} {arguments} → {ex.Message}");
             return ToolResultFormatter.Error(new McpException(
                 ErrorCodes.UnityExecution,
                 "Unexpected server error",

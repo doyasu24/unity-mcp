@@ -32,7 +32,7 @@ internal static class Constants
 
 internal static class ErrorCodes
 {
-    public const string ConfigValidation = "ERR_CONFIG_VALIDATION";
+
     public const string InvalidRequest = "ERR_INVALID_REQUEST";
     public const string InvalidParams = "ERR_INVALID_PARAMS";
     public const string UnknownCommand = "ERR_UNKNOWN_COMMAND";
@@ -47,59 +47,6 @@ internal static class ErrorCodes
     public const string CompileErrors = "ERR_COMPILE_ERRORS";
 }
 
-internal static class ConfigLoader
-{
-    public static ServerConfig Parse(string[] args)
-    {
-        var port = Constants.DefaultPort;
-
-        for (var i = 0; i < args.Length; i++)
-        {
-            var current = args[i];
-            if (string.Equals(current, "--port", StringComparison.Ordinal))
-            {
-                if (i + 1 >= args.Length)
-                {
-                    throw new McpException(ErrorCodes.ConfigValidation, "--port requires a value");
-                }
-
-                if (!int.TryParse(args[i + 1], out port))
-                {
-                    throw new McpException(
-                        ErrorCodes.ConfigValidation,
-                        "--port must be an integer",
-                        new JsonObject { ["port"] = args[i + 1] });
-                }
-
-                i += 1;
-                continue;
-            }
-
-            if (current.StartsWith("--port=", StringComparison.Ordinal))
-            {
-                var raw = current["--port=".Length..];
-                if (!int.TryParse(raw, out port))
-                {
-                    throw new McpException(
-                        ErrorCodes.ConfigValidation,
-                        "--port must be an integer",
-                        new JsonObject { ["port"] = raw });
-                }
-            }
-        }
-
-        if (port is < 1 or > 65535)
-        {
-            throw new McpException(
-                ErrorCodes.ConfigValidation,
-                "--port must be between 1 and 65535",
-                new JsonObject { ["port"] = port });
-        }
-
-        return new ServerConfig(port);
-    }
-}
-
 internal sealed class McpException : Exception
 {
     public McpException(string code, string message, JsonNode? details = null)
@@ -112,81 +59,6 @@ internal sealed class McpException : Exception
     public string Code { get; }
 
     public JsonNode? Details { get; }
-}
-
-internal static class Logger
-{
-    private static readonly object Gate = new();
-
-    public static void Banner(int port)
-    {
-        lock (Gate)
-        {
-            Console.Error.WriteLine();
-            Console.Error.WriteLine("  \x1b[1;35m unity-mcp \x1b[0m\x1b[90mv" + Constants.ServerVersion + "\x1b[0m");
-            Console.Error.WriteLine();
-            Console.Error.WriteLine("  \x1b[90mMCP  \x1b[0mhttp://" + Constants.Host + ":" + port + Constants.McpHttpPath);
-            Console.Error.WriteLine("  \x1b[90mWS   \x1b[0mws://" + Constants.Host + ":" + port + Constants.UnityWsPath);
-            Console.Error.WriteLine();
-        }
-    }
-
-    public static void Info(string message, params (string Key, object? Value)[] context) => Write("INFO", message, context);
-
-    public static void Warn(string message, params (string Key, object? Value)[] context) => Write("WARN", message, context);
-
-    public static void Error(string message, params (string Key, object? Value)[] context) => Write("ERROR", message, context);
-
-    private static void Write(string level, string message, IReadOnlyList<(string Key, object? Value)> context)
-    {
-        var ts = DateTimeOffset.UtcNow.ToString("HH:mm:ss.fff");
-
-        var (levelColor, resetColor) = level switch
-        {
-            "WARN" => ("\x1b[33m", "\x1b[0m"),
-            "ERROR" => ("\x1b[31m", "\x1b[0m"),
-            _ => ("", ""),
-        };
-
-        var sb = new System.Text.StringBuilder();
-        sb.Append("\x1b[90m");
-        sb.Append(ts);
-        sb.Append("\x1b[0m ");
-        sb.Append(levelColor);
-        sb.Append(level.PadRight(5));
-        if (resetColor.Length > 0) sb.Append(resetColor);
-        sb.Append(' ');
-        sb.Append(message);
-
-        foreach (var (key, value) in context)
-        {
-            if (value is null)
-            {
-                continue;
-            }
-
-            sb.Append("  \x1b[36m");
-            sb.Append(key);
-            sb.Append("\x1b[0m=");
-            sb.Append(FormatValue(value));
-        }
-
-        lock (Gate)
-        {
-            Console.Error.WriteLine(sb.ToString());
-        }
-    }
-
-    private static string FormatValue(object? value)
-    {
-        return value switch
-        {
-            null => "null",
-            Exception ex => $"{ex.GetType().Name}: {ex.Message}",
-            JsonNode node => node.ToJsonString(JsonDefaults.Options),
-            _ => value.ToString() ?? "null",
-        };
-    }
 }
 
 /// <summary>

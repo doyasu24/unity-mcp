@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using UnityMcpServer;
 
 namespace UnityMcpServer.Tests;
@@ -9,7 +10,7 @@ public sealed class UnityBridgeShutdownTests
     {
         var runtimeState = new RuntimeState();
         runtimeState.OnConnected(EditorState.Ready, "conn-1", "editor-1");
-        var bridge = new UnityBridge(runtimeState, new RequestScheduler(Constants.QueueMaxSize));
+        var bridge = new UnityBridge(runtimeState, new RequestScheduler(Constants.QueueMaxSize), NullLogger<UnityBridge>.Instance);
 
         bridge.BeginShutdown();
         bridge.BeginShutdown();

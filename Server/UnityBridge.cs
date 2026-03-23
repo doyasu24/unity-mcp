@@ -6,6 +6,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using ZLogger;
 
 namespace UnityMcpServer;
 
@@ -38,6 +40,7 @@ internal sealed class UnityBridge
 
     private readonly RuntimeState _runtimeState;
     private readonly RequestScheduler _scheduler;
+    private readonly ILogger<UnityBridge> _logger;
     private readonly UnitySessionRegistry _sessionRegistry = new();
     private readonly ConcurrentDictionary<string, PendingRequest> _pendingRequests = new(StringComparer.Ordinal);
     private readonly LogThrottle _sessionConnectLog = new(LifecycleLogThrottleInterval);
@@ -47,11 +50,14 @@ internal sealed class UnityBridge
     private CancellationTokenSource? _staleTimerCts;
     private long _lastMessageReceivedAtUtcTicks;
     private int _shutdownRequested;
+    /// <summary>初回接続を判定するフラグ。connect_attempt_seq は domain reload でリセットされるため使用不可。</summary>
+    private int _hasEverConnected;
 
-    public UnityBridge(RuntimeState runtimeState, RequestScheduler scheduler)
+    public UnityBridge(RuntimeState runtimeState, RequestScheduler scheduler, ILogger<UnityBridge> logger)
     {
         _runtimeState = runtimeState;
         _scheduler = scheduler;
+        _logger = logger;
     }
 
     public async Task HandleWebSocketEndpointAsync(HttpContext context)
@@ -81,7 +87,7 @@ internal sealed class UnityBridge
         {
             if (!IsShuttingDown())
             {
-                Logger.Warn("Unity websocket session failed", ("error", ex.Message));
+                _logger.ZLogWarning($"Unity websocket session failed error={ex.Message}");
             }
         }
         finally
@@ -1133,8 +1139,7 @@ internal sealed class UnityBridge
                 // Plugin が compiling を報告。ただし _runtimeState にはまだ
                 // editor_status(compiling) が到着していない可能性がある。
                 // WaitForStateTransitionAsync で _runtimeState の追随を待つ。
-                Logger.Info("Post-mutation compilation reported by plugin, waiting for editor ready",
-                    ("tool", toolName));
+                _logger.ZLogDebug($"Post-mutation compilation reported by plugin, waiting for editor ready tool={toolName}");
                 await _runtimeState.WaitForStateTransitionAsync(settleWindow, token);
                 await EnsureEditorReadyAsync(token);
             }
@@ -1144,8 +1149,7 @@ internal sealed class UnityBridge
                 var compilationDetected = await _runtimeState.WaitForStateTransitionAsync(settleWindow, token);
                 if (compilationDetected)
                 {
-                    Logger.Info("Post-mutation compilation detected via state transition, waiting for editor ready",
-                        ("tool", toolName));
+                    _logger.ZLogDebug($"Post-mutation compilation detected via state transition, waiting for editor ready tool={toolName}");
                     await EnsureEditorReadyAsync(token);
                 }
             }
@@ -1330,7 +1334,7 @@ internal sealed class UnityBridge
         {
             if (!IsShuttingDown() && !IsExpectedDisconnect(ex))
             {
-                Logger.Warn("Unity websocket receive error", ("error", ex.Message));
+                _logger.ZLogWarning($"Unity websocket receive error error={ex.Message}");
             }
         }
         catch (ObjectDisposedException)
@@ -1353,7 +1357,7 @@ internal sealed class UnityBridge
         }
         catch (Exception)
         {
-            Logger.Warn("Received non-JSON message from Unity");
+            _logger.ZLogWarning($"Received non-JSON message from Unity");
             return;
         }
 
@@ -1365,7 +1369,7 @@ internal sealed class UnityBridge
 
         if (!string.Equals(type, "hello", StringComparison.Ordinal) && !_sessionRegistry.IsActive(sourceSocket))
         {
-            Logger.Warn("Received message from non-active Unity websocket", ("type", type));
+            _logger.ZLogWarning($"Received message from non-active Unity websocket type={type}");
             await SafeCloseSocketAsync(sourceSocket, WebSocketCloseStatus.PolicyViolation, "inactive-session", cancellationToken);
             return;
         }
@@ -1425,7 +1429,7 @@ internal sealed class UnityBridge
             return;
         }
 
-        Logger.Warn("Unhandled message from Unity", ("type", type), ("request_id", requestId));
+        _logger.ZLogWarning($"Unhandled message from Unity type={type} request_id={requestId}");
     }
 
     private async Task HandleHelloAsync(WebSocket socket, JsonObject message, CancellationToken cancellationToken)
@@ -1519,17 +1523,28 @@ internal sealed class UnityBridge
         _runtimeState.OnConnected(initialState, connectionId, editorInstanceId);
         StartStaleTimer(socket, connectionId, editorInstanceId);
 
-        var (shouldLog, suppressed) = _sessionConnectLog.Check();
-        if (shouldLog)
+        var isInitial = Interlocked.Exchange(ref _hasEverConnected, 1) == 0;
+        var connectLogLevel = isInitial ? LogLevel.Information : LogLevel.Debug;
+        if (_logger.IsEnabled(connectLogLevel))
         {
-            Logger.Info(
-                "Unity websocket session activated",
-                ("connection_id", connectionId),
-                ("editor_instance_id", editorInstanceId),
-                ("plugin_session_id", pluginSessionId),
-                ("connect_attempt_seq", connectAttemptSeq),
-                ("editor_state", initialState.ToWire()),
-                ("suppressed", suppressed > 0 ? suppressed : null));
+            var (shouldLog, suppressed) = _sessionConnectLog.Check();
+            if (shouldLog)
+            {
+                if (isInitial)
+                {
+                    // editor_instance_id は "{pid}:{project_path}/Assets" 形式。プロジェクトパスのみ抽出。
+                    var projectPath = editorInstanceId ?? "";
+                    var colonIdx = projectPath.IndexOf(':');
+                    if (colonIdx >= 0) projectPath = projectPath[(colonIdx + 1)..];
+                    if (projectPath.EndsWith("/Assets", StringComparison.Ordinal)) projectPath = projectPath[..^"/Assets".Length];
+                    _logger.ZLogInformation($"Unity connected {projectPath}");
+                }
+                else
+                {
+                    var sup = suppressed > 0 ? suppressed : (int?)null;
+                    _logger.ZLogDebug($"Unity websocket session activated (reconnect) connection_id={connectionId} editor_instance_id={editorInstanceId} plugin_session_id={pluginSessionId} connect_attempt_seq={connectAttemptSeq} editor_state={initialState.ToWire()} suppressed={sup}");
+                }
+            }
         }
     }
 
@@ -1540,14 +1555,14 @@ internal sealed class UnityBridge
         FailPendingRequestsAsDisconnected();
         _runtimeState.OnDisconnected();
         await SafeCloseSocketAsync(replacedSocket, WebSocketCloseStatus.NormalClosure, "replaced-by-same-editor", CancellationToken.None);
-        var (shouldLog, suppressed) = _sessionDisconnectLog.Check();
-        if (shouldLog)
+        if (_logger.IsEnabled(LogLevel.Debug))
         {
-            Logger.Info(
-                "Unity websocket session replaced existing active session for same editor",
-                ("replaced_connection_id", snapshot.ActiveConnectionId),
-                ("editor_instance_id", snapshot.EditorInstanceId),
-                ("suppressed", suppressed > 0 ? suppressed : null));
+            var (shouldLog, suppressed) = _sessionDisconnectLog.Check();
+            if (shouldLog)
+            {
+                var sup = suppressed > 0 ? suppressed : (int?)null;
+                _logger.ZLogDebug($"Unity websocket session replaced existing active session for same editor replaced_connection_id={snapshot.ActiveConnectionId} editor_instance_id={snapshot.EditorInstanceId} suppressed={sup}");
+            }
         }
     }
 
@@ -1588,11 +1603,7 @@ internal sealed class UnityBridge
                     var elapsed = DateTimeOffset.UtcNow.UtcTicks - lastTicks;
                     if (elapsed > TimeSpan.FromMilliseconds(Constants.StaleConnectionTimeoutMs).Ticks)
                     {
-                        Logger.Warn(
-                            "Stale connection timeout reached. Closing Unity websocket.",
-                            ("connection_id", connectionId),
-                            ("editor_instance_id", editorInstanceId),
-                            ("timeout_ms", Constants.StaleConnectionTimeoutMs));
+                        _logger.ZLogWarning($"Stale connection timeout reached. Closing Unity websocket. connection_id={connectionId} editor_instance_id={editorInstanceId} timeout_ms={Constants.StaleConnectionTimeoutMs}");
                         await SafeCloseSocketAsync(socket, WebSocketCloseStatus.PolicyViolation, "stale-connection-timeout", CancellationToken.None);
                         return;
                     }
@@ -1604,7 +1615,7 @@ internal sealed class UnityBridge
             }
             catch (Exception ex)
             {
-                Logger.Warn("Stale timer loop error", ("error", ex.Message));
+                _logger.ZLogWarning($"Stale timer loop error error={ex.Message}");
             }
         });
     }
@@ -1726,8 +1737,7 @@ internal sealed class UnityBridge
         {
             // Plugin はコンパイル中だが _runtimeState にはまだ反映されていない可能性がある。
             // WaitForStateTransitionAsync で _runtimeState の追随を待ってからコンパイル完了を待機。
-            Logger.Info("Live-check detected compilation in progress, waiting for editor ready",
-                ("editor_state", editorState));
+            _logger.ZLogDebug($"Live-check detected compilation in progress, waiting for editor ready editor_state={editorState}");
             var settleWindow = TimeSpan.FromMilliseconds(Constants.PostMutationSettleMs);
             await _runtimeState.WaitForStateTransitionAsync(settleWindow, token);
             await EnsureEditorReadyAsync(token);
@@ -1774,16 +1784,13 @@ internal sealed class UnityBridge
         StopStaleTimer();
         FailPendingRequestsAsDisconnected();
         _runtimeState.OnDisconnected();
-        if (wasConnected && !IsShuttingDown())
+        if (wasConnected && !IsShuttingDown() && _logger.IsEnabled(LogLevel.Debug))
         {
             var (shouldLog, suppressed) = _sessionDisconnectLog.Check();
             if (shouldLog)
             {
-                Logger.Info(
-                    "Unity websocket session disconnected",
-                    ("connection_id", snapshot.ActiveConnectionId),
-                    ("editor_instance_id", snapshot.EditorInstanceId),
-                    ("suppressed", suppressed > 0 ? suppressed : null));
+                var sup = suppressed > 0 ? suppressed : (int?)null;
+                _logger.ZLogDebug($"Unity websocket session disconnected connection_id={snapshot.ActiveConnectionId} editor_instance_id={snapshot.EditorInstanceId} suppressed={sup}");
             }
         }
     }
@@ -1826,13 +1833,9 @@ internal sealed class UnityBridge
             return;
         }
 
-        Logger.Warn(
-            "Rejected Unity websocket session because another editor is active",
-            ("editor_instance_id", editorInstanceId),
-            ("plugin_session_id", pluginSessionId),
-            ("connect_attempt_seq", connectAttemptSeq),
-            ("suppressed", suppressed > 0 ? suppressed : null),
-            ("throttle_sec", suppressed > 0 ? (int)LifecycleLogThrottleInterval.TotalSeconds : null));
+        var sup = suppressed > 0 ? suppressed : (int?)null;
+        var throttleSec = suppressed > 0 ? (int?)LifecycleLogThrottleInterval.TotalSeconds : null;
+        _logger.ZLogWarning($"Rejected Unity websocket session because another editor is active editor_instance_id={editorInstanceId} plugin_session_id={pluginSessionId} connect_attempt_seq={connectAttemptSeq} suppressed={sup} throttle_sec={throttleSec}");
     }
 
     private static async Task SendRawAsync(WebSocket socket, JsonObject payload, CancellationToken cancellationToken)

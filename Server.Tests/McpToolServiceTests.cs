@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging.Abstractions;
 using UnityMcpServer;
 
 namespace UnityMcpServer.Tests;
@@ -848,7 +849,7 @@ public sealed class McpToolServiceTests
     private static McpToolService CreateService(RuntimeState runtimeState)
     {
         var scheduler = new RequestScheduler(Constants.QueueMaxSize);
-        var bridge = new UnityBridge(runtimeState, scheduler);
-        return new McpToolService(runtimeState, bridge);
+        var bridge = new UnityBridge(runtimeState, scheduler, NullLogger<UnityBridge>.Instance);
+        return new McpToolService(runtimeState, bridge, NullLogger<McpToolService>.Instance);
     }
 }
