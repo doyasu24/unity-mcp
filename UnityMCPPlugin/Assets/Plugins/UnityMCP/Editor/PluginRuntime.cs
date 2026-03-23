@@ -132,7 +132,7 @@ namespace UnityMcpPlugin
 
                 _initialized = true;
 
-                PluginLogger.UserInfo("Unity MCP plugin initialized", ("port", _desiredPort));
+                PluginLogger.DevInfo("Unity MCP plugin initialized", ("port", _desiredPort));
             }
         }
 
@@ -167,7 +167,7 @@ namespace UnityMcpPlugin
                 _currentConnectAttemptSeq = 0;
             }
 
-            PluginLogger.UserInfo("Unity MCP plugin stopped");
+            PluginLogger.DevInfo("Unity MCP plugin stopped");
         }
 
         internal int GetActivePort()
@@ -637,7 +637,7 @@ namespace UnityMcpPlugin
 
             _connectionManager.ClearReconnectDelay();
             ResetConnectivityIssueTracking();
-            PluginLogger.UserInfo("Connected to server", ("port", connectedPort), ("connection_id", connectionId));
+            PluginLogger.UserInfo("Connected to server", ("port", connectedPort));
         }
 
         private void EnqueueInboundMessage(JObject message)
