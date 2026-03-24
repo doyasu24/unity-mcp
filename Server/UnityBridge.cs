@@ -192,22 +192,48 @@ internal sealed class UnityBridge
             await EnsureEditModeAsync(token);
 
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RefreshAssets);
-            var payload = await ExecuteWithRecompileRecoveryAsync(
-                ToolNames.RefreshAssets, new JsonObject(), timeoutMs,
-                () => new JsonObject { ["refreshed"] = true },
-                token);
-
-            // ライブチェック: ExecuteWithRecompileRecoveryAsync のフォールバックパスで
-            // コンパイルを検知できなかった場合の安全弁。
-            // ドメインリロードが今まさに発生中の場合は ReconnectTimeout 等でリカバリ。
+            JsonNode payload;
             try
             {
-                await EnsureNotCompilingLiveAsync(token);
+                payload = await ExecuteSyncToolAsync(
+                    ToolNames.RefreshAssets, new JsonObject(), timeoutMs, token);
             }
-            catch (McpException ex) when (ex.Code is ErrorCodes.ReconnectTimeout
-                or ErrorCodes.UnityDisconnected or ErrorCodes.RequestTimeout)
+            catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
             {
+                // ドメインリロードでレスポンス前に切断。Refresh は実行済み。
                 await EnsureEditorReadyAsync(token);
+                payload = new JsonObject { ["refreshed"] = true, ["compiling"] = true };
+            }
+
+            // Plugin の3分岐: compiling / compilation_failed / neither
+            var compiling = payload is JsonObject po
+                && (JsonHelpers.GetBool(po, "compiling") ?? false);
+            var compilationFailed = payload is JsonObject pf
+                && (JsonHelpers.GetBool(pf, "compilation_failed") ?? false);
+
+            // 内部フラグを除去
+            if (payload is JsonObject obj)
+            {
+                obj.Remove("compiling");
+                obj.Remove("compilation_failed");
+            }
+
+            if (compiling)
+            {
+                // コンパイル中 → ポーリングで完了待ち → エラー取得
+                await WaitForCompilationAsync(payload, token);
+            }
+            else if (compilationFailed)
+            {
+                // 既存のコンパイルエラー → エラー取得のみ
+                await AppendErrorsIfAny(payload, token);
+            }
+            else
+            {
+                // ドメインリロード検知フォールバック:
+                // Refresh() 後に compiling=false でも、コンパイル成功→ドメインリロードが
+                // 遅延発生するケースがある。500ms 後に1回確認ポーリングを行う。
+                await CheckForDelayedCompilationAsync(payload, token);
             }
 
             return new RefreshAssetsResult(payload);
@@ -1100,11 +1126,18 @@ internal sealed class UnityBridge
 
             if (isMutation)
             {
-                var actionForFallback = request.Action;
-                var payload = await ExecuteWithRecompileRecoveryAsync(
-                    ToolNames.ManageAsmdef, parameters, timeoutMs,
-                    () => new JsonObject { ["action"] = actionForFallback },
-                    token);
+                JsonNode payload;
+                try
+                {
+                    payload = await ExecuteSyncToolAsync(ToolNames.ManageAsmdef, parameters, timeoutMs, token);
+                }
+                catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+                {
+                    await EnsureEditorReadyAsync(token);
+                    payload = new JsonObject { ["action"] = request.Action };
+                }
+
+                await WaitForCompilationAsync(payload, token);
                 return new ManageAsmdefResult(payload);
             }
 
@@ -1114,70 +1147,79 @@ internal sealed class UnityBridge
     }
 
     /// <summary>
-    /// リコンパイルを伴うミューテーション操作の共通実行ヘルパー。
-    /// 成功時もドメインリロードが後追いで発生しうるため EnsureEditorReadyAsync で待機し、
-    /// コンパイルエラーがあれば payload に追加する。
-    /// ReconnectTimeout 時は操作自体は Editor 側で完了済みとみなし、
-    /// フォールバック結果を構築して同様に処理する。
-    /// スケジューラ内部から呼び出す前提。
+    /// Plugin が compiling=false を返したケースでのフォールバック確認。
+    /// 500ms 後に get_editor_state を1回確認し、ドメインリロードやコンパイル開始を検知する。
     /// </summary>
-    private async Task<JsonNode> ExecuteWithRecompileRecoveryAsync(
-        string toolName,
-        JsonObject parameters,
-        int timeoutMs,
-        Func<JsonObject> buildFallbackResult,
-        CancellationToken token)
+    private async Task CheckForDelayedCompilationAsync(JsonNode payload, CancellationToken token)
     {
+        await Task.Delay(500, token);
+
+        var editorStateTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetEditorState);
+        string? editorState;
         try
         {
-            var payload = await ExecuteSyncToolAsync(toolName, parameters, timeoutMs, token);
-
-            // Plugin が compiling フラグを返した場合は確実にコンパイル完了まで待機。
-            // 旧 Plugin は compiling を返さないため null → false → フォールバックパスへ。
-            // compiling は Plugin→Server 間の内部シグナルのため、読み取り後に除去する。
-            var compiling = payload is JsonObject payloadObj
-                && (JsonHelpers.GetBool(payloadObj, "compiling") ?? false);
-            if (payload is JsonObject po)
-            {
-                po.Remove("compiling");
-            }
-
-            // コンパイル検知: Plugin の compiling フラグまたは state 遷移を使う。
-            // いずれの場合も _runtimeState がコンパイル状態に追随するまで待ち、
-            // その後 EnsureEditorReadyAsync でコンパイル完了を待機する。
-            var settleWindow = TimeSpan.FromMilliseconds(Constants.PostMutationSettleMs);
-
-            if (compiling)
-            {
-                // Plugin が compiling を報告。ただし _runtimeState にはまだ
-                // editor_status(compiling) が到着していない可能性がある。
-                // WaitForStateTransitionAsync で _runtimeState の追随を待つ。
-                _logger.ZLogDebug($"Post-mutation compilation reported by plugin, waiting for editor ready tool={toolName}");
-                await _runtimeState.WaitForStateTransitionAsync(settleWindow, token);
-                await EnsureEditorReadyAsync(token);
-            }
-            else
-            {
-                // フォールバック: isCompiling がまだ false だったケース用。
-                var compilationDetected = await _runtimeState.WaitForStateTransitionAsync(settleWindow, token);
-                if (compilationDetected)
-                {
-                    _logger.ZLogDebug($"Post-mutation compilation detected via state transition, waiting for editor ready tool={toolName}");
-                    await EnsureEditorReadyAsync(token);
-                }
-            }
-
-            await AppendErrorsIfAny(payload, token);
-            return payload;
+            var statePayload = await ExecuteSyncToolAsync(
+                ToolNames.GetEditorState, new JsonObject(), editorStateTimeoutMs, token);
+            editorState = statePayload is JsonObject stateObj
+                ? JsonHelpers.GetString(stateObj, "editor_state")
+                : null;
         }
-        catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+        catch (McpException ex) when (ex.Code is ErrorCodes.ReconnectTimeout
+            or ErrorCodes.UnityDisconnected or ErrorCodes.RequestTimeout)
         {
-            // ミューテーションは Editor 側で完了済み。再接続を待って成功を返す。
+            // ドメインリロード検知。再接続待ち → コンパイル完了待ち。
             await EnsureEditorReadyAsync(token);
-            var result = buildFallbackResult();
-            await AppendErrorsIfAny(result, token);
-            return result;
+            await WaitForCompilationAsync(payload, token);
+            return;
         }
+
+        if (editorState is "compiling" or "reloading")
+        {
+            await WaitForCompilationAsync(payload, token);
+        }
+    }
+
+    /// <summary>
+    /// get_editor_state をポーリングし、コンパイル/リロード完了を待機する。
+    /// 完了後にエラーがあれば payload に追加する。
+    /// スケジューラ内部から呼び出す前提。
+    /// </summary>
+    private async Task WaitForCompilationAsync(JsonNode payload, CancellationToken token)
+    {
+        var editorStateTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetEditorState);
+        var compileDeadline = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(Constants.CompileGraceTimeoutMs);
+
+        while (DateTimeOffset.UtcNow < compileDeadline)
+        {
+            token.ThrowIfCancellationRequested();
+
+            string? editorState;
+            try
+            {
+                var statePayload = await ExecuteSyncToolAsync(
+                    ToolNames.GetEditorState, new JsonObject(), editorStateTimeoutMs, token);
+                editorState = statePayload is JsonObject stateObj
+                    ? JsonHelpers.GetString(stateObj, "editor_state")
+                    : null;
+            }
+            catch (McpException ex) when (ex.Code is ErrorCodes.ReconnectTimeout
+                or ErrorCodes.UnityDisconnected or ErrorCodes.RequestTimeout)
+            {
+                await EnsureEditorReadyAsync(token);
+                break;
+            }
+
+            _logger.ZLogDebug($"WaitForCompilation: poll result editor_state={editorState}");
+
+            if (editorState is not ("compiling" or "reloading"))
+            {
+                break;
+            }
+
+            await Task.Delay(1000, token);
+        }
+
+        await AppendErrorsIfAny(payload, token);
     }
 
     /// <summary>
@@ -1274,30 +1316,108 @@ internal sealed class UnityBridge
         {
             await EnsureEditorReadyAsync(token);
 
-            // live-check: キャッシュされた _runtimeState ではなく Plugin に直接問い合わせ。
-            // refresh_assets 後の editor_status メッセージが Server に未到着のケースを防ぐ。
-            await EnsureNotCompilingLiveAsync(token);
+            // アセットをリフレッシュし、コンパイル完了を待機する。
+            // テストコード変更後に refresh なしで run_tests した場合に古いアセンブリで実行される問題、
+            // およびコンパイルエラーを検知できない問題を防ぐ。
+            await EnsureEditModeAsync(token);
 
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RunTests);
-
-            var parameters = BuildRunTestsParameters(request);
-
-            JsonNode payload;
+            var refreshTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RefreshAssets);
+            JsonNode refreshPayload;
             try
             {
-                payload = await ExecuteSyncToolAsync(ToolNames.RunTests, parameters, timeoutMs, token);
+                refreshPayload = await ExecuteSyncToolAsync(
+                    ToolNames.RefreshAssets, new JsonObject(), refreshTimeoutMs, token);
             }
-            catch (McpException ex) when (ex.Code == "ERR_TEST_LIST_TIMEOUT")
+            catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
             {
-                // TestRunnerApi の初回初期化がタイムアウトした可能性がある。
-                // エディタの安定を待ってからリトライする。
-                _logger.ZLogDebug($"Test list retrieval timed out, waiting for editor ready and retrying");
                 await EnsureEditorReadyAsync(token);
-                payload = await ExecuteSyncToolAsync(ToolNames.RunTests, BuildRunTestsParameters(request), timeoutMs, token);
+                refreshPayload = new JsonObject { ["refreshed"] = true, ["compiling"] = true };
             }
 
-            return new RunTestsResult(payload);
+            {
+                var compiling = refreshPayload is JsonObject rpo
+                    && (JsonHelpers.GetBool(rpo, "compiling") ?? false);
+                var compilationFailed = refreshPayload is JsonObject rpf
+                    && (JsonHelpers.GetBool(rpf, "compilation_failed") ?? false);
+                if (refreshPayload is JsonObject robj)
+                {
+                    robj.Remove("compiling");
+                    robj.Remove("compilation_failed");
+                }
+
+                if (compiling)
+                {
+                    await WaitForCompilationAsync(refreshPayload, token);
+                }
+                else if (compilationFailed)
+                {
+                    await AppendErrorsIfAny(refreshPayload, token);
+                }
+                else
+                {
+                    await CheckForDelayedCompilationAsync(refreshPayload, token);
+                }
+            }
+
+            // コンパイルエラーがあればテスト実行をスキップしてエラーを返す
+            if (refreshPayload is JsonObject refreshObj
+                && refreshObj.TryGetPropertyValue("errors", out var errorsNode)
+                && errorsNode is JsonArray errors
+                && errors.Count > 0)
+            {
+                var result = BuildEmptyRunTestsPayload(request);
+                result["errors"] = errors.DeepClone();
+                return new RunTestsResult(result);
+            }
+
+            // テスト開始（Plugin は即座に応答し、バックグラウンドでテストを実行する）
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RunTests);
+            var parameters = BuildRunTestsParameters(request);
+            await ExecuteSyncToolAsync(ToolNames.RunTests, parameters, timeoutMs, token);
+
+            // テスト完了をポーリングで待機。
+            // Plugin の run_tests を呼び出し、結果が返るまで繰り返す。
+            // 実行中は { "status": "running" }、完了後は実テスト結果が返る。
+            var editorStateTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetEditorState);
+            var testDeadline = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
+            while (DateTimeOffset.UtcNow < testDeadline)
+            {
+                token.ThrowIfCancellationRequested();
+                await Task.Delay(1000, token);
+
+                var pollPayload = await ExecuteSyncToolAsync(
+                    ToolNames.RunTests, new JsonObject(), editorStateTimeoutMs, token);
+
+                // 実テスト結果には "summary" フィールドがある。"status" のみの場合はまだ実行中。
+                if (pollPayload is JsonObject pollObj && pollObj.ContainsKey("summary"))
+                {
+                    return new RunTestsResult(pollPayload);
+                }
+
+                _logger.ZLogDebug($"Waiting for test execution to complete");
+            }
+
+            throw new McpException(ErrorCodes.RequestTimeout, "Test execution timed out");
         }, cancellationToken);
+    }
+
+    private static JsonObject BuildEmptyRunTestsPayload(RunTestsRequest request)
+    {
+        return new JsonObject
+        {
+            ["summary"] = new JsonObject
+            {
+                ["total"] = 0,
+                ["passed"] = 0,
+                ["failed"] = 0,
+                ["skipped"] = 0,
+                ["duration_ms"] = 0,
+            },
+            ["failed_tests"] = new JsonArray(),
+            ["mode"] = request.Mode ?? "all",
+            ["test_full_name"] = request.TestFullName ?? "",
+            ["test_name_pattern"] = request.TestNamePattern ?? "",
+        };
     }
 
     private static JsonObject BuildRunTestsParameters(RunTestsRequest request)
@@ -1722,7 +1842,7 @@ internal sealed class UnityBridge
             // WebSocket 切断時は FailPendingRequestsAsDisconnected が McpException(UnityDisconnected) を設定する。
             // いずれも McpException として catch ブロックに到達し、NormalizeDispatchFailure で正規化される。
             // .WaitAsync を使うと TaskCanceledException が発生し、
-            // ExecuteWithRecompileRecoveryAsync のリカバリパスをバイパスしてしまう。
+            // ReconnectTimeout catch によるリカバリパスをバイパスしてしまう。
             var response = await completion.Task;
             stage = DispatchStage.Completed;
             return response;
@@ -1755,32 +1875,6 @@ internal sealed class UnityBridge
         if (!resumed)
         {
             throw new McpException(waitPolicy.TimeoutErrorCode, waitPolicy.TimeoutErrorMessage);
-        }
-    }
-
-    /// <summary>
-    /// Plugin に get_editor_state を直接問い合わせ、コンパイル中ならコンパイル完了まで待機する。
-    /// キャッシュされた _runtimeState ではなく Plugin 側の EditorStateTracker を参照するため、
-    /// WebSocket の editor_status メッセージが未到着でもコンパイル状態を検知できる。
-    /// </summary>
-    private async Task EnsureNotCompilingLiveAsync(CancellationToken token)
-    {
-        var editorStateTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetEditorState);
-        var statePayload = await ExecuteSyncToolAsync(
-            ToolNames.GetEditorState, new JsonObject(), editorStateTimeoutMs, token);
-
-        var editorState = statePayload is JsonObject stateObj
-            ? JsonHelpers.GetString(stateObj, "editor_state")
-            : null;
-
-        if (editorState is "compiling" or "reloading")
-        {
-            // Plugin はコンパイル中だが _runtimeState にはまだ反映されていない可能性がある。
-            // WaitForStateTransitionAsync で _runtimeState の追随を待ってからコンパイル完了を待機。
-            _logger.ZLogDebug($"Live-check detected compilation in progress, waiting for editor ready editor_state={editorState}");
-            var settleWindow = TimeSpan.FromMilliseconds(Constants.PostMutationSettleMs);
-            await _runtimeState.WaitForStateTransitionAsync(settleWindow, token);
-            await EnsureEditorReadyAsync(token);
         }
     }
 

@@ -95,10 +95,10 @@ internal static class ToolCatalog
             EmptyObjectSchema()),
         [ToolNames.RefreshAssets] = new(
             ToolNames.RefreshAssets,
-            120000,
+            15000,
             300000,
             false,
-            "Refreshes Unity Editor assets. If scripts changed, waits for recompilation to complete before returning. Returns errors (compile errors, import errors) in the 'errors' field when present. Automatically stops play mode if active.",
+            "Refreshes Unity Editor assets. Server monitors editor state and waits for any triggered recompilation to complete. Returns errors (compile errors, import errors) in the 'errors' field when present. Automatically stops play mode if active.",
             EmptyObjectSchema(),
             MayTriggerRecompile: true),
         [ToolNames.ControlPlayMode] = new(
@@ -126,7 +126,7 @@ internal static class ToolCatalog
             300000,
             1800000,
             false,
-            "Runs Unity tests and returns the result.",
+            "Runs Unity tests and returns the result. Automatically refreshes assets and waits for recompilation before running tests. Returns errors if compilation fails.",
             new JsonObject
             {
                 ["type"] = "object",

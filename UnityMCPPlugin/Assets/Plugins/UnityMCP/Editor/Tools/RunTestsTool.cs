@@ -11,17 +11,47 @@ namespace UnityMcpPlugin.Tools
 {
     /// <summary>
     /// Unity Test Runner を使ってテストを実行するツール。
-    /// TestRunnerApi のコールバック待ちが必要なため AsyncToolHandler を使う。
+    /// Fire-and-forget パターン: テスト開始後に即座に応答し、Server 側がポーリングで完了を待つ。
+    /// - 初回呼び出し: テスト開始、{ "status": "started" } を返す
+    /// - 実行中の呼び出し: { "status": "running" } を返す
+    /// - 完了後の呼び出し: キャッシュされたテスト結果を返す
     /// </summary>
     internal sealed class RunTestsTool : AsyncToolHandler
     {
         private const int DefaultRunTestsTimeoutMs = 300_000;
         private const int RetrieveTestListTimeoutMs = 5_000;
 
+        private static readonly object _gate = new();
+        private static bool _isRunning;
+        private static object _pendingResult;
+
         public override string ToolName => ToolNames.RunTests;
 
-        public override async Task<object> ExecuteAsync(JObject parameters)
+        /// <summary>テストが実行中かどうか。GetEditorStateTool から参照される。</summary>
+        internal static bool IsRunning
         {
+            get { lock (_gate) return _isRunning; }
+        }
+
+        public override Task<object> ExecuteAsync(JObject parameters)
+        {
+            // テスト実行中またはキャッシュされた結果がある場合はそちらを返す
+            lock (_gate)
+            {
+                if (_isRunning)
+                {
+                    return Task.FromResult<object>(new RunTestsStatusPayload("running"));
+                }
+
+                if (_pendingResult != null)
+                {
+                    var result = _pendingResult;
+                    _pendingResult = null;
+                    return Task.FromResult(result);
+                }
+            }
+
+            // パラメータ検証（新規実行時のみ）
             var mode = Payload.GetString(parameters, "mode") ?? RunTestsModes.All;
             if (!RunTestsModes.IsSupported(mode))
             {
@@ -46,7 +76,41 @@ namespace UnityMcpPlugin.Tools
                 timeoutMs = DefaultRunTestsTimeoutMs;
             }
 
-            return await ExecuteRunTestsAsync(mode, testFullName, testNamePattern, timeoutMs.Value);
+            // テスト開始（バックグラウンドで実行し、完了後にキャッシュに格納）
+            lock (_gate)
+            {
+                _isRunning = true;
+                _pendingResult = null;
+            }
+
+            _ = ExecuteAndCacheResultAsync(mode, testFullName, testNamePattern, timeoutMs.Value);
+
+            return Task.FromResult<object>(new RunTestsStatusPayload("started"));
+        }
+
+        /// <summary>
+        /// テストをバックグラウンドで実行し、結果をキャッシュに格納する。
+        /// </summary>
+        private static async Task ExecuteAndCacheResultAsync(
+            string mode, string testFullName, string testNamePattern, int timeoutMs)
+        {
+            try
+            {
+                var result = await ExecuteRunTestsAsync(mode, testFullName, testNamePattern, timeoutMs);
+                lock (_gate)
+                {
+                    _isRunning = false;
+                    _pendingResult = result;
+                }
+            }
+            catch (Exception ex)
+            {
+                lock (_gate)
+                {
+                    _isRunning = false;
+                    _pendingResult = BuildExceptionResult(mode, testFullName, testNamePattern, ex);
+                }
+            }
         }
 
         private static async Task<RunTestsJobResult> ExecuteRunTestsAsync(
@@ -96,7 +160,6 @@ namespace UnityMcpPlugin.Tools
             RunAggregation aggregate,
             CancellationToken cancellationToken)
         {
-            // 正規表現を事前検証し、不正パターンは明確なエラーを返す
             if (!string.IsNullOrWhiteSpace(testNamePattern))
             {
                 try
@@ -119,7 +182,6 @@ namespace UnityMcpPlugin.Tools
                 return;
             }
 
-            // 実際のテスト実行
             var completion = new TaskCompletionSource<ITestResultAdaptor>(TaskCreationOptions.RunContinuationsAsynchronously);
             var callback = new RunCallback(completion);
             TestRunnerApi testApi = null;
@@ -134,7 +196,6 @@ namespace UnityMcpPlugin.Tools
                     testMode = testMode,
                 };
 
-                // testFullName -> testNames で完全一致、testNamePattern -> groupNames で正規表現マッチ
                 if (!string.IsNullOrWhiteSpace(testFullName))
                 {
                     testFilter.testNames = new[] { testFullName };
@@ -184,10 +245,6 @@ namespace UnityMcpPlugin.Tools
             MergeRunResult(root, aggregate);
         }
 
-        /// <summary>
-        /// RetrieveTestList を呼び出し、指定タイムアウト内にコールバックが返るのを待つ。
-        /// タイムアウトした場合は ERR_TEST_LIST_TIMEOUT をスローし、サーバー側でリトライ判断させる。
-        /// </summary>
         private static async Task<ITestAdaptor> RetrieveTestListWithTimeoutAsync(
             TestMode testMode, int timeoutMs, CancellationToken cancellationToken)
         {
@@ -224,11 +281,6 @@ namespace UnityMcpPlugin.Tools
             return await testListTcs.Task;
         }
 
-        /// <summary>
-        /// テストツリーにフィルタ条件に一致するリーフテストが存在するかチェックする。
-        /// フィルタ未指定の場合はリーフテストが1つでもあれば true を返す。
-        /// testFullName 指定時は FullName の完全一致、testNamePattern 指定時は正規表現マッチ。
-        /// </summary>
         private static bool HasMatchingLeafTests(ITestAdaptor node, string testFullName, string testNamePattern)
         {
             if (node == null) return false;

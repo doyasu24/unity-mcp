@@ -25,13 +25,20 @@ namespace UnityMcpPlugin
             //  - ドメインリロードが続く場合: delayCall はリロードで破棄。
             //    リロード後の [InitializeOnLoad] コンストラクタが Ready を publish。
             //  - リロード不要の場合 (コンパイルエラー等): 次フレームで Ready を publish。
+            // compilationFinished は各アセンブリのコンパイル完了ごとに発火する。
+            // マルチアセンブリの場合、中間のアセンブリ完了時に isCompiling はまだ true。
+            // delayCall は1回限りのため、isCompiling=true だと Ready が永遠に publish されない。
+            // EditorApplication.update で isCompiling=false になるまで繰り返しチェックする。
             CompilationPipeline.compilationFinished += _ =>
             {
-                EditorApplication.delayCall += () =>
+                void CheckCompilationDone()
                 {
                     if (EditorApplication.isCompiling) return;
+                    EditorApplication.update -= CheckCompilationDone;
                     runtime.PublishEditorState(EditorBridgeState.Ready);
-                };
+                }
+
+                EditorApplication.update += CheckCompilationDone;
             };
             AssemblyReloadEvents.beforeAssemblyReload += () =>
             {

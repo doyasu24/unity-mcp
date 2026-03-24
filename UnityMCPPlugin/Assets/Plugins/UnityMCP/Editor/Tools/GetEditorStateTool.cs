@@ -1,5 +1,6 @@
 using System;
 using Newtonsoft.Json.Linq;
+using UnityEditor;
 
 namespace UnityMcpPlugin.Tools
 {
@@ -19,15 +20,35 @@ namespace UnityMcpPlugin.Tools
 
         public override string ToolName => ToolNames.GetEditorState;
 
-        // EditorSnapshot の取得はスレッドセーフ
-        public override bool RequiresMainThread => false;
+        // EditorApplication.isCompiling をメインスレッドで確認する
+        public override bool RequiresMainThread => true;
 
         public override object Execute(JObject parameters)
         {
             var snapshot = _snapshotProvider();
+            var state = snapshot.State;
+
+            // EditorApplication.isCompiling を権威ある値として使う。
+            // EditorStateTracker はイベント駆動で遅延・欠落しうるため、isCompiling で上書きする。
+            if (EditorApplication.isCompiling)
+            {
+                state = EditorBridgeState.Compiling;
+            }
+            else if (state == EditorBridgeState.Compiling)
+            {
+                // トラッカーは Compiling だが isCompiling は false → 実際は完了済み
+                state = EditorBridgeState.Ready;
+            }
+
+            // テスト実行中の場合
+            if (state == EditorBridgeState.Ready && RunTestsTool.IsRunning)
+            {
+                state = EditorBridgeState.RunningTests;
+            }
+
             return new RuntimeStatePayload(
                 snapshot.Connected ? "ready" : "waiting_editor",
-                Wire.ToWireState(snapshot.State),
+                Wire.ToWireState(state),
                 snapshot.Connected,
                 snapshot.Seq);
         }

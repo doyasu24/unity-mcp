@@ -10,6 +10,7 @@ namespace UnityMcpPlugin
         Reloading,
         EnteringPlayMode,
         ExitingPlayMode,
+        RunningTests,
     }
 
     internal enum PortReconfigureStatus
@@ -111,7 +112,8 @@ namespace UnityMcpPlugin
 
     internal sealed record RefreshAssetsPayload(
         [property: JsonProperty("refreshed")] bool Refreshed,
-        [property: JsonProperty("compiling")] bool Compiling);
+        [property: JsonProperty("compiling")] bool Compiling,
+        [property: JsonProperty("compilation_failed")] bool CompilationFailed);
 
     internal sealed record PlayModeStatePayload(
         [property: JsonProperty("state")] string State,
@@ -339,6 +341,9 @@ namespace UnityMcpPlugin
         [property: JsonProperty("added_reference", NullValueHandling = NullValueHandling.Ignore)] AsmdefReferenceInfo AddedReference,
         [property: JsonProperty("removed_reference", NullValueHandling = NullValueHandling.Ignore)] AsmdefReferenceInfo RemovedReference,
         [property: JsonProperty("references")] AsmdefReferenceInfo[] References);
+
+    internal sealed record RunTestsStatusPayload(
+        [property: JsonProperty("status")] string Status);
 
     internal sealed record RunTestsJobResult(
         [property: JsonProperty("summary")] TestSummary Summary,

@@ -20,6 +20,8 @@ namespace UnityMcpPlugin
                     return "entering_play_mode";
                 case EditorBridgeState.ExitingPlayMode:
                     return "exiting_play_mode";
+                case EditorBridgeState.RunningTests:
+                    return "running_tests";
                 default:
                     return "ready";
             }
