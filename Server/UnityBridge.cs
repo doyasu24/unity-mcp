@@ -1280,23 +1280,43 @@ internal sealed class UnityBridge
 
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RunTests);
 
-            var parameters = new JsonObject
+            var parameters = BuildRunTestsParameters(request);
+
+            JsonNode payload;
+            try
             {
-                ["mode"] = request.Mode,
-            };
-            if (!string.IsNullOrWhiteSpace(request.TestFullName))
+                payload = await ExecuteSyncToolAsync(ToolNames.RunTests, parameters, timeoutMs, token);
+            }
+            catch (McpException ex) when (ex.Code == "ERR_TEST_LIST_TIMEOUT")
             {
-                parameters["test_full_name"] = request.TestFullName;
+                // TestRunnerApi の初回初期化がタイムアウトした可能性がある。
+                // エディタの安定を待ってからリトライする。
+                _logger.ZLogDebug($"Test list retrieval timed out, waiting for editor ready and retrying");
+                await EnsureEditorReadyAsync(token);
+                payload = await ExecuteSyncToolAsync(ToolNames.RunTests, BuildRunTestsParameters(request), timeoutMs, token);
             }
 
-            if (!string.IsNullOrWhiteSpace(request.TestNamePattern))
-            {
-                parameters["test_name_pattern"] = request.TestNamePattern;
-            }
-
-            var payload = await ExecuteSyncToolAsync(ToolNames.RunTests, parameters, timeoutMs, token);
             return new RunTestsResult(payload);
         }, cancellationToken);
+    }
+
+    private static JsonObject BuildRunTestsParameters(RunTestsRequest request)
+    {
+        var parameters = new JsonObject
+        {
+            ["mode"] = request.Mode,
+        };
+        if (!string.IsNullOrWhiteSpace(request.TestFullName))
+        {
+            parameters["test_full_name"] = request.TestFullName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TestNamePattern))
+        {
+            parameters["test_name_pattern"] = request.TestNamePattern;
+        }
+
+        return parameters;
     }
 
     private async Task ReceiveLoopAsync(WebSocket socket, CancellationToken cancellationToken)
@@ -1696,7 +1716,14 @@ internal sealed class UnityBridge
         {
             await SendRawAsync(socket, message, cancellationToken);
             stage = DispatchStage.AfterSend;
-            var response = await completion.Task.WaitAsync(cancellationToken);
+            // .WaitAsync(cancellationToken) を使わない。
+            // timeoutCts が cancellationToken にリンクされているため、
+            // 外部キャンセル時は Register コールバック経由で McpException(RequestTimeout) が設定される。
+            // WebSocket 切断時は FailPendingRequestsAsDisconnected が McpException(UnityDisconnected) を設定する。
+            // いずれも McpException として catch ブロックに到達し、NormalizeDispatchFailure で正規化される。
+            // .WaitAsync を使うと TaskCanceledException が発生し、
+            // ExecuteWithRecompileRecoveryAsync のリカバリパスをバイパスしてしまう。
+            var response = await completion.Task;
             stage = DispatchStage.Completed;
             return response;
         }

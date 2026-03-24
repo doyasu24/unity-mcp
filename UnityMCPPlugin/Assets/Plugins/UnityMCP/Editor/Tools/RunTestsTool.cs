@@ -113,35 +113,7 @@ namespace UnityMcpPlugin.Tools
             // テストリスト取得による事前チェック: マッチするリーフテストがない場合は
             // Execute() を呼ばない。TestRunnerApi.Execute() はテストが存在しないと
             // RunFinished を発火しないため、リクエストが永久にハングする。
-            var testListTcs = new TaskCompletionSource<ITestAdaptor>(TaskCreationOptions.RunContinuationsAsynchronously);
-            TestRunnerApi preCheckApi = null;
-
-            await MainThreadDispatcher.InvokeAsync(() =>
-            {
-                preCheckApi = ScriptableObject.CreateInstance<TestRunnerApi>();
-                preCheckApi.RetrieveTestList(testMode, root => testListTcs.TrySetResult(root));
-                return true;
-            });
-
-            using var preCheckCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            preCheckCts.CancelAfter(RetrieveTestListTimeoutMs);
-
-            var preCheckCancel = Task.Delay(Timeout.Infinite, preCheckCts.Token);
-            var preCheckCompleted = await Task.WhenAny(testListTcs.Task, preCheckCancel);
-
-            await MainThreadDispatcher.InvokeAsync(() =>
-            {
-                if (preCheckApi != null) UnityEngine.Object.DestroyImmediate(preCheckApi);
-                return true;
-            });
-
-            if (!ReferenceEquals(preCheckCompleted, testListTcs.Task))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                return;
-            }
-
-            var testRoot = await testListTcs.Task;
+            var testRoot = await RetrieveTestListWithTimeoutAsync(testMode, RetrieveTestListTimeoutMs, cancellationToken);
             if (!HasMatchingLeafTests(testRoot, testFullName, testNamePattern))
             {
                 return;
@@ -210,6 +182,46 @@ namespace UnityMcpPlugin.Tools
             }
 
             MergeRunResult(root, aggregate);
+        }
+
+        /// <summary>
+        /// RetrieveTestList を呼び出し、指定タイムアウト内にコールバックが返るのを待つ。
+        /// タイムアウトした場合は ERR_TEST_LIST_TIMEOUT をスローし、サーバー側でリトライ判断させる。
+        /// </summary>
+        private static async Task<ITestAdaptor> RetrieveTestListWithTimeoutAsync(
+            TestMode testMode, int timeoutMs, CancellationToken cancellationToken)
+        {
+            var testListTcs = new TaskCompletionSource<ITestAdaptor>(TaskCreationOptions.RunContinuationsAsynchronously);
+            TestRunnerApi preCheckApi = null;
+
+            await MainThreadDispatcher.InvokeAsync(() =>
+            {
+                preCheckApi = ScriptableObject.CreateInstance<TestRunnerApi>();
+                preCheckApi.RetrieveTestList(testMode, root => testListTcs.TrySetResult(root));
+                return true;
+            });
+
+            using var preCheckCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            preCheckCts.CancelAfter(timeoutMs);
+
+            var preCheckCancel = Task.Delay(Timeout.Infinite, preCheckCts.Token);
+            var preCheckCompleted = await Task.WhenAny(testListTcs.Task, preCheckCancel);
+
+            await MainThreadDispatcher.InvokeAsync(() =>
+            {
+                if (preCheckApi != null) UnityEngine.Object.DestroyImmediate(preCheckApi);
+                return true;
+            });
+
+            if (!ReferenceEquals(preCheckCompleted, testListTcs.Task))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new PluginException(
+                    "ERR_TEST_LIST_TIMEOUT",
+                    $"RetrieveTestList did not respond within {timeoutMs}ms (testMode={testMode})");
+            }
+
+            return await testListTcs.Task;
         }
 
         /// <summary>
