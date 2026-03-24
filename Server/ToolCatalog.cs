@@ -115,7 +115,7 @@ internal static class ToolCatalog
                     ["action"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["enum"] = PlayModeActions.ToJsonArray(),
+                        ["description"] = "start (aliases: play, resume, unpause) | stop (aliases: end, exit) | pause",
                     },
                 },
                 ["required"] = new JsonArray("action"),

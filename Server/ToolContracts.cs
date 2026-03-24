@@ -161,6 +161,22 @@ internal static class PlayModeActions
     public const string Stop = "stop";
     public const string Pause = "pause";
 
+    /// <summary>
+    /// LLM が送りがちなエイリアスを正規のアクション名に変換する。
+    /// 該当しなければ入力をそのまま返す（後続の IsSupported で弾く）。
+    /// </summary>
+    public static string? Normalize(string? action)
+    {
+        return action?.ToLowerInvariant() switch
+        {
+            "play" or "resume" or "unpause" => Start,
+            "end" or "exit" => Stop,
+            // 正規値はそのまま通す
+            Start or Stop or Pause => action.ToLowerInvariant(),
+            _ => action,
+        };
+    }
+
     public static bool IsSupported(string? action)
     {
         return action is Start or Stop or Pause;

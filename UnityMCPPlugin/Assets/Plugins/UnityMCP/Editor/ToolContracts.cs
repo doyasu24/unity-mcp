@@ -73,6 +73,30 @@ namespace UnityMcpPlugin
         internal const string Stop = "stop";
         internal const string Pause = "pause";
 
+        /// <summary>
+        /// LLM が送りがちなエイリアスを正規のアクション名に変換する。
+        /// 該当しなければ入力をそのまま返す（後続の IsSupported で弾く）。
+        /// </summary>
+        internal static string Normalize(string action)
+        {
+            switch (action?.ToLowerInvariant())
+            {
+                case "play":
+                case "resume":
+                case "unpause":
+                    return Start;
+                case "end":
+                case "exit":
+                    return Stop;
+                case Start:
+                case Stop:
+                case Pause:
+                    return action.ToLowerInvariant();
+                default:
+                    return action;
+            }
+        }
+
         internal static bool IsSupported(string action)
         {
             return action == Start || action == Stop || action == Pause;

@@ -13,7 +13,7 @@ namespace UnityMcpPlugin.Tools
 
         public override object Execute(JObject parameters)
         {
-            var action = Payload.GetString(parameters, "action");
+            var action = PlayModeActions.Normalize(Payload.GetString(parameters, "action"));
             if (!PlayModeActions.IsSupported(action))
             {
                 throw new PluginException(

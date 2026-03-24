@@ -327,7 +327,7 @@ internal sealed class McpToolService
 
     private static ControlPlayModeRequest ParseControlPlayModeRequest(JsonObject arguments)
     {
-        var action = JsonHelpers.GetString(arguments, "action");
+        var action = PlayModeActions.Normalize(JsonHelpers.GetString(arguments, "action"));
         if (!PlayModeActions.IsSupported(action))
         {
             throw new McpException(
