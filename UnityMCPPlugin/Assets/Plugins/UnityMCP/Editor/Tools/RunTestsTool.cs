@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
+using UnityEditor;
 using UnityEditor.TestTools.TestRunner.Api;
 using UnityEngine;
 
@@ -20,6 +21,7 @@ namespace UnityMcpPlugin.Tools
     {
         private const int DefaultRunTestsTimeoutMs = 300_000;
         private const int RetrieveTestListTimeoutMs = 5_000;
+        private const int CompilationPollIntervalMs = 500;
 
         private static readonly object _gate = new();
         private static bool _isRunning;
@@ -113,6 +115,18 @@ namespace UnityMcpPlugin.Tools
             }
         }
 
+        /// <summary>
+        /// コンパイル完了までポーリングで待機する。全体タイムアウトの CancellationToken を共有する。
+        /// </summary>
+        private static async Task WaitForCompilationAsync(CancellationToken cancellationToken)
+        {
+            while (await MainThreadDispatcher.InvokeAsync(() => EditorApplication.isCompiling))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await Task.Delay(CompilationPollIntervalMs, cancellationToken);
+            }
+        }
+
         private static async Task<RunTestsJobResult> ExecuteRunTestsAsync(
             string mode, string testFullName, string testNamePattern, int timeoutMs)
         {
@@ -121,6 +135,10 @@ namespace UnityMcpPlugin.Tools
 
             try
             {
+                // コンパイル完了を待ってからテストを開始する。
+                // コンパイル中は TestRunnerApi.RetrieveTestList() が応答できないため。
+                await WaitForCompilationAsync(cancellationToken);
+
                 var aggregate = new RunAggregation(mode, testFullName, testNamePattern);
 
                 if (string.Equals(mode, RunTestsModes.All, StringComparison.Ordinal))
