@@ -27,7 +27,7 @@ namespace UnityMcpPlugin.Tools
             switch (source)
             {
                 case ScreenshotSources.GameView:
-                    return ExecuteGameView(width, height, outputPath, screenshotsDir, timestamp, parameters);
+                    return ExecuteGameView(outputPath, screenshotsDir, timestamp);
                 case ScreenshotSources.SceneView:
                     return ExecuteSceneView(width, height, outputPath, screenshotsDir, timestamp);
                 case ScreenshotSources.Camera:
@@ -38,21 +38,18 @@ namespace UnityMcpPlugin.Tools
         }
 
         private static CaptureScreenshotPayload ExecuteGameView(
-            int width, int height, string outputPath, string screenshotsDir, string timestamp, JObject parameters)
+            string outputPath, string screenshotsDir, string timestamp)
         {
-            if (EditorApplication.isPlaying)
+            if (!EditorApplication.isPlaying)
             {
-                // Play Mode: ScreenCapture API で合成結果（全カメラ+Canvas UI+ポスプロ）を取得
-                if (string.IsNullOrEmpty(outputPath))
-                    outputPath = System.IO.Path.Combine(screenshotsDir, $"unity_screenshot_{timestamp}.png");
-                return CaptureGameViewPlayMode(outputPath);
+                throw new PluginException("ERR_INVALID_STATE",
+                    "game_view requires Play Mode. Use source='scene_view' to capture the Scene View in Edit Mode, "
+                    + "or use control_play_mode to enter Play Mode first.");
             }
 
-            // Edit Mode: Camera.main or camera_path でレンダリング（現行互換）
-            Camera camera = ResolveCameraForGameView(parameters);
             if (string.IsNullOrEmpty(outputPath))
                 outputPath = System.IO.Path.Combine(screenshotsDir, $"unity_screenshot_{timestamp}.png");
-            return RenderCameraToFile(camera, width, height, outputPath, ScreenshotSources.GameView);
+            return CaptureGameViewPlayMode(outputPath);
         }
 
         /// <summary>
@@ -148,22 +145,6 @@ namespace UnityMcpPlugin.Tools
             }
         }
 
-        /// <summary>game_view Edit Mode 用: Camera.main or camera_path でカメラ解決。</summary>
-        private static Camera ResolveCameraForGameView(JObject parameters)
-        {
-            var cameraPath = Payload.GetString(parameters, "camera_path");
-            if (!string.IsNullOrEmpty(cameraPath))
-                return ResolveExplicitCamera(cameraPath);
-
-            var cam = Camera.main;
-            if (cam == null)
-            {
-                throw new PluginException("ERR_OBJECT_NOT_FOUND",
-                    "No main camera found. Tag a camera as MainCamera or specify camera_path.");
-            }
-            return cam;
-        }
-
         /// <summary>camera_path から明示的にカメラを解決する。</summary>
         private static Camera ResolveExplicitCamera(string cameraPath)
         {
@@ -171,14 +152,16 @@ namespace UnityMcpPlugin.Tools
             if (go == null)
             {
                 throw new PluginException("ERR_OBJECT_NOT_FOUND",
-                    $"GameObject not found at path: {cameraPath}");
+                    $"GameObject not found at path: {cameraPath}. "
+                    + "Verify the path with get_hierarchy, or use source='scene_view' to capture without specifying a camera.");
             }
 
             var cam = go.GetComponent<Camera>();
             if (cam == null)
             {
                 throw new PluginException("ERR_OBJECT_NOT_FOUND",
-                    $"No Camera component found on GameObject: {cameraPath}");
+                    $"No Camera component found on GameObject: {cameraPath}. "
+                    + "Use get_component_info to inspect the object's components, or use source='scene_view'.");
             }
             return cam;
         }

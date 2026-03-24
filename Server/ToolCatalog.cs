@@ -730,7 +730,7 @@ internal static class ToolCatalog
                         ["type"] = "string",
                         ["enum"] = ScreenshotSources.ToJsonArray(),
                         ["default"] = ScreenshotSources.GameView,
-                        ["description"] = "Capture source. 'game_view': composited Game View output (Play Mode) or Camera.main render (Edit Mode). 'scene_view': Scene View camera render. 'camera': render from a specific camera (requires camera_path).",
+                        ["description"] = "Capture source. 'game_view': composited Game View output (requires Play Mode). 'scene_view': Scene View camera render (works in Edit Mode). 'camera': render from a specific camera (requires camera_path).",
                     },
                     ["width"] = new JsonObject
                     {
@@ -751,7 +751,7 @@ internal static class ToolCatalog
                     ["camera_path"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "Camera hierarchy path. Required for 'camera' source. For 'game_view' (Edit Mode only): overrides Camera.main. Ignored for 'scene_view'.",
+                        ["description"] = "Camera hierarchy path. Required for 'camera' source. Ignored for 'game_view' and 'scene_view'.",
                     },
                     ["output_path"] = new JsonObject
                     {
