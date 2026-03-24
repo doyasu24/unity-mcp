@@ -216,6 +216,48 @@ internal sealed class RuntimeState
         }
     }
 
+    // refresh_assets 後にコンパイル等の状態遷移が始まるかを待機する
+    public async Task<bool> WaitForStateTransitionAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (!IsEditorReady())
+        {
+            return true;
+        }
+
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Handler()
+        {
+            if (!IsEditorReady())
+            {
+                tcs.TrySetResult(true);
+            }
+        }
+
+        StateChanged += Handler;
+        try
+        {
+            // post-subscribe double-check
+            if (!IsEditorReady())
+            {
+                return true;
+            }
+
+            var delayTask = Task.Delay(timeout, cancellationToken);
+            var completed = await Task.WhenAny(tcs.Task, delayTask);
+            if (completed == tcs.Task)
+            {
+                return true;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return false;
+        }
+        finally
+        {
+            StateChanged -= Handler;
+        }
+    }
+
     public async Task<bool> WaitForEditorReadyAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
         if (IsEditorReady())
