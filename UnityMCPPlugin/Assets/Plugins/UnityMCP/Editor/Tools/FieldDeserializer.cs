@@ -308,7 +308,8 @@ namespace UnityMcpPlugin.Tools
         {
             if (value.Type == JTokenType.Integer)
             {
-                prop.enumValueIndex = value.Value<int>();
+                // enum の backing value として設定（enumValueIndex は 0-based 配列インデックスなので不適切）
+                prop.intValue = value.Value<int>();
                 return;
             }
 
@@ -327,7 +328,7 @@ namespace UnityMcpPlugin.Tools
 
                 if (int.TryParse(target, out var idx))
                 {
-                    prop.enumValueIndex = idx;
+                    prop.intValue = idx;
                 }
             }
         }
