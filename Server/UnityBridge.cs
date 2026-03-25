@@ -1146,6 +1146,42 @@ internal sealed class UnityBridge
         }, cancellationToken);
     }
 
+    public Task<ManagePrefabResult> ManagePrefabAsync(ManagePrefabRequest request, CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManagePrefab);
+            var parameters = new JsonObject
+            {
+                ["action"] = request.Action,
+            };
+
+            if (!string.IsNullOrWhiteSpace(request.GameObjectPath))
+            {
+                parameters["game_object_path"] = request.GameObjectPath;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.PrefabPath))
+            {
+                parameters["prefab_path"] = request.PrefabPath;
+            }
+
+            if (request.Connect.HasValue)
+            {
+                parameters["connect"] = request.Connect.Value;
+            }
+
+            if (request.Completely.HasValue)
+            {
+                parameters["completely"] = request.Completely.Value;
+            }
+
+            var payload = await ExecuteSyncToolAsync(ToolNames.ManagePrefab, parameters, timeoutMs, token);
+            return new ManagePrefabResult(payload);
+        }, cancellationToken);
+    }
+
     /// <summary>
     /// Plugin が compiling=false を返したケースでのフォールバック確認。
     /// 500ms 後に get_editor_state を1回確認し、ドメインリロードやコンパイル開始を検知する。

@@ -47,7 +47,7 @@ namespace UnityMcpPlugin.Tools
             if (string.IsNullOrEmpty(assetType) || !AssetTypes.IsSupported(assetType))
             {
                 throw new PluginException("ERR_INVALID_PARAMS",
-                    $"asset_type is required for 'create' and must be one of: {AssetTypes.Material}|{AssetTypes.Folder}|{AssetTypes.PhysicMaterial}|{AssetTypes.AnimatorController}|{AssetTypes.RenderTexture}|{AssetTypes.Prefab}");
+                    $"asset_type is required for 'create' and must be one of: {AssetTypes.Material}|{AssetTypes.Folder}|{AssetTypes.PhysicMaterial}|{AssetTypes.AnimatorController}|{AssetTypes.RenderTexture}");
             }
 
             var overwrite = Payload.GetBool(parameters, "overwrite") ?? false;
@@ -84,9 +84,6 @@ namespace UnityMcpPlugin.Tools
                     break;
                 case AssetTypes.RenderTexture:
                     CreateRenderTexture(parameters, assetPath);
-                    break;
-                case AssetTypes.Prefab:
-                    CreatePrefab(parameters, assetPath);
                     break;
             }
 
@@ -203,39 +200,5 @@ namespace UnityMcpPlugin.Tools
             AssetDatabase.CreateAsset(rt, assetPath);
         }
 
-        private static void CreatePrefab(JObject parameters, string assetPath)
-        {
-            if (!assetPath.EndsWith(".prefab"))
-            {
-                throw new PluginException("ERR_INVALID_PARAMS",
-                    "asset_path must end with .prefab for prefab asset type");
-            }
-
-            var props = parameters["properties"] as JObject;
-            var sourceGoPath = props?["source_game_object_path"]?.Value<string>();
-
-            if (string.IsNullOrEmpty(sourceGoPath))
-            {
-                // ソース未指定: 空のプレハブを作成
-                PrefabHelper.CreateEmptyPrefab(assetPath);
-                return;
-            }
-
-            // シーン上の GameObject をプレハブとして保存
-            var go = GameObjectResolver.Resolve(sourceGoPath);
-            if (go == null)
-            {
-                throw new PluginException(SceneToolErrors.ObjectNotFound,
-                    $"Source GameObject not found: {sourceGoPath}");
-            }
-
-            bool success;
-            PrefabUtility.SaveAsPrefabAsset(go, assetPath, out success);
-            if (!success)
-            {
-                throw new PluginException(PrefabToolErrors.PrefabSaveFailed,
-                    $"Failed to save prefab at: {assetPath}");
-            }
-        }
     }
 }

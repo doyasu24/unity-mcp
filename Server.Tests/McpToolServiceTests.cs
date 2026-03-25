@@ -846,6 +846,56 @@ public sealed class McpToolServiceTests
         Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
     }
 
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManagePrefab_InvalidAction()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["action"] = "invalid",
+            ["game_object_path"] = "/Player",
+        };
+        var result = await service.CallToolAsync(ToolNames.ManagePrefab, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManagePrefab_GetStatusMissingPath()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["action"] = "get_status",
+        };
+        var result = await service.CallToolAsync(ToolNames.ManagePrefab, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManagePrefab_SaveMissingPrefabPath()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["action"] = "save",
+            ["game_object_path"] = "/Player",
+        };
+        var result = await service.CallToolAsync(ToolNames.ManagePrefab, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
     private static McpToolService CreateService(RuntimeState runtimeState)
     {
         var scheduler = new RequestScheduler(Constants.QueueMaxSize);

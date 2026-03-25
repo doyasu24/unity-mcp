@@ -31,6 +31,7 @@ namespace UnityMcpPlugin
         internal const string ManageAsset = "manage_asset";
         internal const string CaptureScreenshot = "capture_screenshot";
         internal const string ManageAsmdef = "manage_asmdef";
+        internal const string ManagePrefab = "manage_prefab";
     }
 
     internal static class ToolLimits
@@ -173,11 +174,10 @@ namespace UnityMcpPlugin
         internal const string PhysicMaterial = "physic_material";
         internal const string AnimatorController = "animator_controller";
         internal const string RenderTexture = "render_texture";
-        internal const string Prefab = "prefab";
 
         internal static bool IsSupported(string type)
         {
-            return type == Material || type == Folder || type == PhysicMaterial || type == AnimatorController || type == RenderTexture || type == Prefab;
+            return type == Material || type == Folder || type == PhysicMaterial || type == AnimatorController || type == RenderTexture;
         }
     }
 
@@ -189,6 +189,19 @@ namespace UnityMcpPlugin
         internal static bool IsSupported(string action)
         {
             return action == Enable || action == Disable;
+        }
+    }
+
+    internal static class ManagePrefabActions
+    {
+        internal const string Save = "save";
+        internal const string Apply = "apply";
+        internal const string Unpack = "unpack";
+        internal const string GetStatus = "get_status";
+
+        internal static bool IsSupported(string action)
+        {
+            return action == Save || action == Apply || action == Unpack || action == GetStatus;
         }
     }
 

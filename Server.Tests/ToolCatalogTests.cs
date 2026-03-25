@@ -442,6 +442,50 @@ public sealed class ToolCatalogTests
         Assert.False(properties.ContainsKey("filter"));
     }
 
+    [Fact]
+    public void BuildMcpTools_ContainsManagePrefab()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        AssertToolExists(tools, ToolNames.ManagePrefab);
+    }
+
+    [Fact]
+    public void BuildMcpTools_ManagePrefabSchema_HasActionEnum()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.ManagePrefab);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var properties = Assert.IsType<JsonObject>(schema["properties"]);
+        var action = Assert.IsType<JsonObject>(properties["action"]);
+        var @enum = Assert.IsType<JsonArray>(action["enum"]);
+
+        Assert.Contains(ManagePrefabActions.Save, @enum.Select(node => node?.GetValue<string>()));
+        Assert.Contains(ManagePrefabActions.Apply, @enum.Select(node => node?.GetValue<string>()));
+        Assert.Contains(ManagePrefabActions.Unpack, @enum.Select(node => node?.GetValue<string>()));
+        Assert.Contains(ManagePrefabActions.GetStatus, @enum.Select(node => node?.GetValue<string>()));
+    }
+
+    [Fact]
+    public void BuildMcpTools_ManagePrefabSchema_RequiresAction()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.ManagePrefab);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var required = Assert.IsType<JsonArray>(schema["required"]);
+        var requiredNames = required.Select(n => n?.GetValue<string>()).ToList();
+
+        Assert.Contains("action", requiredNames);
+        // game_object_path は save 時に省略可能なので required にしない
+        Assert.DoesNotContain("game_object_path", requiredNames);
+    }
+
+    [Fact]
+    public void BuildUnityCapabilityTools_ContainsManagePrefab()
+    {
+        var tools = ToolCatalog.BuildUnityCapabilityTools();
+        AssertSyncToolWithoutCancel(tools, ToolNames.ManagePrefab);
+    }
+
     private static void AssertSyncToolWithoutCancel(JsonArray tools, string toolName)
     {
         var tool = AssertToolExists(tools, toolName);

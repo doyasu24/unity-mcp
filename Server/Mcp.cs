@@ -111,6 +111,7 @@ internal sealed class McpToolService
             ToolNames.ManageAsset => (await _unityBridge.ManageAssetAsync(ParseManageAssetRequest(arguments), cancellationToken)).Payload,
             ToolNames.CaptureScreenshot => (await _unityBridge.CaptureScreenshotAsync(ParseCaptureScreenshotRequest(arguments), cancellationToken)).Payload,
             ToolNames.ManageAsmdef => (await _unityBridge.ManageAsmdefAsync(ParseManageAsmdefRequest(arguments), cancellationToken)).Payload,
+            ToolNames.ManagePrefab => (await _unityBridge.ManagePrefabAsync(ParseManagePrefabRequest(arguments), cancellationToken)).Payload,
             ToolNames.ExecuteBatch => await ExecuteBatchServerSideAsync(arguments, cancellationToken),
             _ => throw new McpException(ErrorCodes.UnknownCommand, $"Unknown tool: {toolName}"),
         };
@@ -1135,7 +1136,7 @@ internal sealed class McpToolService
             {
                 throw new McpException(
                     ErrorCodes.InvalidParams,
-                    $"asset_type must be one of {AssetTypes.Material}|{AssetTypes.Folder}|{AssetTypes.PhysicMaterial}|{AssetTypes.AnimatorController}|{AssetTypes.RenderTexture}|{AssetTypes.Prefab}",
+                    $"asset_type must be one of {AssetTypes.Material}|{AssetTypes.Folder}|{AssetTypes.PhysicMaterial}|{AssetTypes.AnimatorController}|{AssetTypes.RenderTexture}",
                     new JsonObject { ["asset_type"] = assetType });
             }
         }
@@ -1349,6 +1350,49 @@ internal sealed class McpToolService
             reference, referenceGuid, namePattern, maxResults, offset);
     }
 
+    private static ManagePrefabRequest ParseManagePrefabRequest(JsonObject arguments)
+    {
+        var action = JsonHelpers.GetString(arguments, "action");
+        if (!ManagePrefabActions.IsSupported(action))
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"action must be one of {ManagePrefabActions.Save}|{ManagePrefabActions.Apply}|{ManagePrefabActions.Unpack}|{ManagePrefabActions.GetStatus}",
+                new JsonObject { ["action"] = action });
+        }
+
+        var gameObjectPath = JsonHelpers.GetString(arguments, "game_object_path");
+        string? prefabPath = null;
+        bool? connect = null;
+        bool? completely = null;
+
+        switch (action)
+        {
+            case ManagePrefabActions.Save:
+                prefabPath = JsonHelpers.GetString(arguments, "prefab_path");
+                if (string.IsNullOrWhiteSpace(prefabPath))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "prefab_path is required for 'save' action");
+                }
+                connect = JsonHelpers.GetBool(arguments, "connect");
+                break;
+
+            case ManagePrefabActions.Apply:
+            case ManagePrefabActions.Unpack:
+            case ManagePrefabActions.GetStatus:
+                if (string.IsNullOrWhiteSpace(gameObjectPath))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, $"game_object_path is required for '{action}' action");
+                }
+                if (action == ManagePrefabActions.Unpack)
+                {
+                    completely = JsonHelpers.GetBool(arguments, "completely");
+                }
+                break;
+        }
+
+        return new ManagePrefabRequest(action!, gameObjectPath, prefabPath, connect, completely);
+    }
 }
 
 internal static class ToolResultFormatter

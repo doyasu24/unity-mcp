@@ -659,7 +659,7 @@ internal static class ToolCatalog
             15000,
             30000,
             false,
-            "Manages Unity assets: create/delete (materials, folders, physic materials, animator controllers, render textures, prefabs) and material operations (get/set properties, shaders, keywords).",
+            "Manages Unity assets: create/delete (materials, folders, physic materials, animator controllers, render textures) and material operations (get/set properties, shaders, keywords). For prefab creation, use manage_prefab instead.",
             new JsonObject
             {
                 ["type"] = "object",
@@ -686,7 +686,7 @@ internal static class ToolCatalog
                     {
                         ["type"] = "object",
                         ["additionalProperties"] = true,
-                        ["description"] = "For create: type-specific settings (Material: {shader_name}, RenderTexture: {width, height, depth}, Prefab: {source_game_object_path} — scene GO hierarchy path to save as prefab, omit to create empty prefab). For set_properties: property name-value map.",
+                        ["description"] = "For create: type-specific settings (Material: {shader_name}, RenderTexture: {width, height, depth}). For set_properties: property name-value map.",
                     },
                     ["overwrite"] = new JsonObject
                     {
@@ -927,6 +927,50 @@ internal static class ToolCatalog
                 ["additionalProperties"] = false,
             },
             MayTriggerRecompile: true),
+
+        [ToolNames.ManagePrefab] = new(
+            ToolNames.ManagePrefab,
+            15000,
+            30000,
+            false,
+            "Manages prefab relationships for scene GameObjects. save: save a scene GameObject as a new prefab asset (or create an empty prefab). apply: apply instance overrides back to the source prefab. unpack: disconnect a prefab instance from its source. get_status: query prefab connection status, overrides, and variant info (read-only).",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["action"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = ManagePrefabActions.ToJsonArray(),
+                        ["description"] = "Operation to perform.",
+                    },
+                    ["game_object_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Scene hierarchy path of the target GameObject (e.g. \"/Canvas/Panel\"). Required for apply, unpack, get_status. Optional for save (omit to create an empty prefab).",
+                    },
+                    ["prefab_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Asset path to save the prefab to (e.g. \"Assets/Prefabs/Player.prefab\"). Required for 'save' action only. Parent directories are created automatically.",
+                    },
+                    ["connect"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["default"] = false,
+                        ["description"] = "If true, the scene instance remains linked to the newly created prefab asset. For 'save' action only.",
+                    },
+                    ["completely"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["default"] = false,
+                        ["description"] = "If true, recursively unpacks all nested prefabs. For 'unpack' action only.",
+                    },
+                },
+                ["required"] = new JsonArray("action"),
+                ["additionalProperties"] = false,
+            }),
     };
 
     public static JsonArray BuildMcpTools()

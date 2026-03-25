@@ -40,6 +40,7 @@ internal static class ToolNames
     public const string CaptureScreenshot = "capture_screenshot";
     public const string ExecuteBatch = "execute_batch";
     public const string ManageAsmdef = "manage_asmdef";
+    public const string ManagePrefab = "manage_prefab";
 }
 
 internal static class ToolLimits
@@ -357,16 +358,15 @@ internal static class AssetTypes
     public const string PhysicMaterial = "physic_material";
     public const string AnimatorController = "animator_controller";
     public const string RenderTexture = "render_texture";
-    public const string Prefab = "prefab";
 
     public static bool IsSupported(string? type)
     {
-        return type is Material or Folder or PhysicMaterial or AnimatorController or RenderTexture or Prefab;
+        return type is Material or Folder or PhysicMaterial or AnimatorController or RenderTexture;
     }
 
     public static JsonArray ToJsonArray()
     {
-        return new JsonArray(Material, Folder, PhysicMaterial, AnimatorController, RenderTexture, Prefab);
+        return new JsonArray(Material, Folder, PhysicMaterial, AnimatorController, RenderTexture);
     }
 }
 
@@ -475,4 +475,28 @@ internal sealed record ManageAsmdefRequest(
     int Offset);
 
 internal sealed record ManageAsmdefResult(JsonNode Payload);
+
+internal static class ManagePrefabActions
+{
+    public const string Save = "save";
+    public const string Apply = "apply";
+    public const string Unpack = "unpack";
+    public const string GetStatus = "get_status";
+
+    public static bool IsSupported(string? action)
+    {
+        return action is Save or Apply or Unpack or GetStatus;
+    }
+
+    public static JsonArray ToJsonArray()
+    {
+        return new JsonArray(Save, Apply, Unpack, GetStatus);
+    }
+}
+
+internal sealed record ManagePrefabRequest(
+    string Action, string? GameObjectPath, string? PrefabPath,
+    bool? Connect, bool? Completely);
+
+internal sealed record ManagePrefabResult(JsonNode Payload);
 
