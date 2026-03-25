@@ -41,6 +41,7 @@ internal static class ToolNames
     public const string ExecuteBatch = "execute_batch";
     public const string ManageAsmdef = "manage_asmdef";
     public const string ManagePrefab = "manage_prefab";
+    public const string ManageBuild = "manage_build";
 }
 
 internal static class ToolLimits
@@ -499,4 +500,130 @@ internal sealed record ManagePrefabRequest(
     bool? Connect, bool? Completely);
 
 internal sealed record ManagePrefabResult(JsonNode Payload);
+
+internal static class ManageBuildActions
+{
+    public const string Build = "build";
+    public const string BuildReport = "build_report";
+    public const string Validate = "validate";
+    public const string GetPlatform = "get_platform";
+    public const string SwitchPlatform = "switch_platform";
+    public const string GetSettings = "get_settings";
+    public const string SetSettings = "set_settings";
+    public const string GetScenes = "get_scenes";
+    public const string SetScenes = "set_scenes";
+    public const string ListProfiles = "list_profiles";
+    public const string GetActiveProfile = "get_active_profile";
+    public const string SetActiveProfile = "set_active_profile";
+
+    public static bool IsSupported(string? action)
+    {
+        return action is Build or BuildReport or Validate
+            or GetPlatform or SwitchPlatform
+            or GetSettings or SetSettings
+            or GetScenes or SetScenes
+            or ListProfiles or GetActiveProfile or SetActiveProfile;
+    }
+
+    public static JsonArray ToJsonArray()
+    {
+        return new JsonArray(Build, BuildReport, Validate,
+            GetPlatform, SwitchPlatform,
+            GetSettings, SetSettings,
+            GetScenes, SetScenes,
+            ListProfiles, GetActiveProfile, SetActiveProfile);
+    }
+}
+
+internal static class BuildTargets
+{
+    public const string Windows64 = "windows64";
+    public const string Osx = "osx";
+    public const string Linux64 = "linux64";
+    public const string Android = "android";
+    public const string Ios = "ios";
+    public const string Webgl = "webgl";
+
+    public static bool IsSupported(string? target)
+    {
+        return target is Windows64 or Osx or Linux64 or Android or Ios or Webgl;
+    }
+
+    public static JsonArray ToJsonArray()
+    {
+        return new JsonArray(Windows64, Osx, Linux64, Android, Ios, Webgl);
+    }
+}
+
+internal static class BuildOptionNames
+{
+    public const string CleanBuild = "clean_build";
+    public const string AutoRun = "auto_run";
+    public const string ShowBuiltPlayer = "show_built_player";
+    public const string StrictMode = "strict_mode";
+    public const string DetailedBuildReport = "detailed_build_report";
+
+    public static bool IsSupported(string? option)
+    {
+        return option is CleanBuild or AutoRun or ShowBuiltPlayer or StrictMode or DetailedBuildReport;
+    }
+
+    public static JsonArray ToJsonArray()
+    {
+        return new JsonArray(CleanBuild, AutoRun, ShowBuiltPlayer, StrictMode, DetailedBuildReport);
+    }
+}
+
+internal static class BuildSettingsProperties
+{
+    public const string ProductName = "product_name";
+    public const string CompanyName = "company_name";
+    public const string Version = "version";
+    public const string BundleId = "bundle_id";
+    public const string ScriptingBackend = "scripting_backend";
+    public const string Defines = "defines";
+
+    public static bool IsSupported(string? property)
+    {
+        return property is ProductName or CompanyName or Version or BundleId or ScriptingBackend or Defines;
+    }
+
+    public static JsonArray ToJsonArray()
+    {
+        return new JsonArray(ProductName, CompanyName, Version, BundleId, ScriptingBackend, Defines);
+    }
+}
+
+internal static class DefinesActions
+{
+    public const string Set = "set";
+    public const string Add = "add";
+    public const string Remove = "remove";
+
+    public static bool IsSupported(string? action)
+    {
+        return action is Set or Add or Remove;
+    }
+
+    public static JsonArray ToJsonArray()
+    {
+        return new JsonArray(Set, Add, Remove);
+    }
+}
+
+internal sealed record ManageBuildRequest(
+    string Action,
+    string? Target,
+    string? OutputPath,
+    string[]? Scenes,
+    bool? Development,
+    string[]? Options,
+    string? Subtarget,
+    string? Property,
+    string? Value,
+    string? DefinesAction,
+    JsonArray? BuildScenes,
+    string? ProfilePath);
+
+internal sealed record ManageBuildResult(JsonNode Payload);
 

@@ -971,6 +971,114 @@ internal static class ToolCatalog
                 ["required"] = new JsonArray("action"),
                 ["additionalProperties"] = false,
             }),
+        [ToolNames.ManageBuild] = new(
+            ToolNames.ManageBuild,
+            600000,
+            1800000,
+            false,
+            "Manages Unity build pipeline. Actions: build (execute BuildPipeline.BuildPlayer), build_report (get last build report with size breakdown — unique feature), validate (pre-build checks for missing scenes/scripts/compile errors — unique feature), get_platform/switch_platform, get_settings/set_settings (defines supports add/remove via defines_action — unique feature), get_scenes/set_scenes, list_profiles/get_active_profile/set_active_profile (Unity 6+ only).",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["action"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = ManageBuildActions.ToJsonArray(),
+                        ["description"] = "Operation to perform.",
+                    },
+                    ["target"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = BuildTargets.ToJsonArray(),
+                        ["description"] = "Build target platform. For build (optional, defaults to active), switch_platform (required).",
+                    },
+                    ["output_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Output path for the build (e.g. 'Builds/Win64/Game.exe'). Required for 'build' action.",
+                    },
+                    ["scenes"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject { ["type"] = "string" },
+                        ["description"] = "Scene paths to include in the build. Omit to use EditorBuildSettings scenes. For 'build' action only.",
+                    },
+                    ["development"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["default"] = false,
+                        ["description"] = "Enable development build. For 'build' action only.",
+                    },
+                    ["options"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "string",
+                            ["enum"] = BuildOptionNames.ToJsonArray(),
+                        },
+                        ["description"] = "Additional build options. For 'build' action only.",
+                    },
+                    ["subtarget"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = new JsonArray("player", "server"),
+                        ["description"] = "Build subtarget ('player' or 'server'). For 'build' action only.",
+                    },
+                    ["property"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = BuildSettingsProperties.ToJsonArray(),
+                        ["description"] = "PlayerSettings property name. Required for get_settings/set_settings.",
+                    },
+                    ["value"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Value to set. Required for set_settings. For defines: semicolon-separated symbols.",
+                    },
+                    ["defines_action"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = DefinesActions.ToJsonArray(),
+                        ["default"] = DefinesActions.Set,
+                        ["description"] = "How to apply defines: 'set' (replace all, default), 'add' (append symbols), 'remove' (remove symbols). Only for set_settings with property='defines'.",
+                    },
+                    ["build_scenes"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["path"] = new JsonObject
+                                {
+                                    ["type"] = "string",
+                                    ["description"] = "Scene asset path (e.g. 'Assets/Scenes/Main.unity').",
+                                },
+                                ["enabled"] = new JsonObject
+                                {
+                                    ["type"] = "boolean",
+                                    ["default"] = true,
+                                },
+                            },
+                            ["required"] = new JsonArray("path"),
+                            ["additionalProperties"] = false,
+                        },
+                        ["description"] = "Build scene list with enabled flags. Required for 'set_scenes' action.",
+                    },
+                    ["profile_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Asset path to a BuildProfile, or 'none' to clear. Required for 'set_active_profile' (Unity 6+ only).",
+                    },
+                },
+                ["required"] = new JsonArray("action"),
+                ["additionalProperties"] = false,
+            },
+            MayTriggerRecompile: true),
     };
 
     public static JsonArray BuildMcpTools()

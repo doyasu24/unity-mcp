@@ -112,6 +112,7 @@ internal sealed class McpToolService
             ToolNames.CaptureScreenshot => (await _unityBridge.CaptureScreenshotAsync(ParseCaptureScreenshotRequest(arguments), cancellationToken)).Payload,
             ToolNames.ManageAsmdef => (await _unityBridge.ManageAsmdefAsync(ParseManageAsmdefRequest(arguments), cancellationToken)).Payload,
             ToolNames.ManagePrefab => (await _unityBridge.ManagePrefabAsync(ParseManagePrefabRequest(arguments), cancellationToken)).Payload,
+            ToolNames.ManageBuild => (await _unityBridge.ManageBuildAsync(ParseManageBuildRequest(arguments), cancellationToken)).Payload,
             ToolNames.ExecuteBatch => await ExecuteBatchServerSideAsync(arguments, cancellationToken),
             _ => throw new McpException(ErrorCodes.UnknownCommand, $"Unknown tool: {toolName}"),
         };
@@ -1392,6 +1393,154 @@ internal sealed class McpToolService
         }
 
         return new ManagePrefabRequest(action!, gameObjectPath, prefabPath, connect, completely);
+    }
+
+    private static ManageBuildRequest ParseManageBuildRequest(JsonObject arguments)
+    {
+        var action = JsonHelpers.GetString(arguments, "action");
+        if (!ManageBuildActions.IsSupported(action))
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"action must be one of: {string.Join(", ", ManageBuildActions.ToJsonArray().Select(a => a!.GetValue<string>()))}",
+                new JsonObject { ["action"] = action });
+        }
+
+        string? target = null;
+        string? outputPath = null;
+        string[]? scenes = null;
+        bool? development = null;
+        string[]? options = null;
+        string? subtarget = null;
+        string? property = null;
+        string? value = null;
+        string? definesAction = null;
+        JsonArray? buildScenes = null;
+        string? profilePath = null;
+
+        switch (action)
+        {
+            case ManageBuildActions.Build:
+                outputPath = JsonHelpers.GetString(arguments, "output_path");
+                if (string.IsNullOrWhiteSpace(outputPath))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "output_path is required for 'build' action");
+                }
+
+                target = JsonHelpers.GetString(arguments, "target");
+                if (target != null && !BuildTargets.IsSupported(target))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams,
+                        $"target must be one of: {string.Join(", ", BuildTargets.ToJsonArray().Select(t => t!.GetValue<string>()))}");
+                }
+
+                scenes = JsonHelpers.GetStringArray(arguments, "scenes");
+                development = JsonHelpers.GetBool(arguments, "development");
+                subtarget = JsonHelpers.GetString(arguments, "subtarget");
+
+                options = JsonHelpers.GetStringArray(arguments, "options");
+                if (options != null)
+                {
+                    foreach (var opt in options)
+                    {
+                        if (!BuildOptionNames.IsSupported(opt))
+                        {
+                            throw new McpException(ErrorCodes.InvalidParams,
+                                $"Unknown build option: '{opt}'. Must be one of: {string.Join(", ", BuildOptionNames.ToJsonArray().Select(o => o!.GetValue<string>()))}");
+                        }
+                    }
+                }
+
+                break;
+
+            case ManageBuildActions.SwitchPlatform:
+                target = JsonHelpers.GetString(arguments, "target");
+                if (string.IsNullOrWhiteSpace(target))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "target is required for 'switch_platform' action");
+                }
+
+                if (!BuildTargets.IsSupported(target))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams,
+                        $"target must be one of: {string.Join(", ", BuildTargets.ToJsonArray().Select(t => t!.GetValue<string>()))}");
+                }
+
+                break;
+
+            case ManageBuildActions.GetSettings:
+                property = JsonHelpers.GetString(arguments, "property");
+                if (string.IsNullOrWhiteSpace(property))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "property is required for 'get_settings' action");
+                }
+
+                if (!BuildSettingsProperties.IsSupported(property))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams,
+                        $"property must be one of: {string.Join(", ", BuildSettingsProperties.ToJsonArray().Select(p => p!.GetValue<string>()))}");
+                }
+
+                break;
+
+            case ManageBuildActions.SetSettings:
+                property = JsonHelpers.GetString(arguments, "property");
+                if (string.IsNullOrWhiteSpace(property))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "property is required for 'set_settings' action");
+                }
+
+                if (!BuildSettingsProperties.IsSupported(property))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams,
+                        $"property must be one of: {string.Join(", ", BuildSettingsProperties.ToJsonArray().Select(p => p!.GetValue<string>()))}");
+                }
+
+                value = JsonHelpers.GetString(arguments, "value");
+                if (value == null)
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "value is required for 'set_settings' action");
+                }
+
+                definesAction = JsonHelpers.GetString(arguments, "defines_action");
+                if (definesAction != null && !DefinesActions.IsSupported(definesAction))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams,
+                        $"defines_action must be one of: {string.Join(", ", DefinesActions.ToJsonArray().Select(d => d!.GetValue<string>()))}");
+                }
+
+                break;
+
+            case ManageBuildActions.SetScenes:
+                buildScenes = arguments["build_scenes"] as JsonArray;
+                if (buildScenes == null || buildScenes.Count == 0)
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "build_scenes is required for 'set_scenes' action");
+                }
+
+                break;
+
+            case ManageBuildActions.SetActiveProfile:
+                profilePath = JsonHelpers.GetString(arguments, "profile_path");
+                if (string.IsNullOrWhiteSpace(profilePath))
+                {
+                    throw new McpException(ErrorCodes.InvalidParams, "profile_path is required for 'set_active_profile' action");
+                }
+
+                break;
+
+            // 読み取り専用アクションは追加パラメータ不要
+            case ManageBuildActions.BuildReport:
+            case ManageBuildActions.Validate:
+            case ManageBuildActions.GetPlatform:
+            case ManageBuildActions.GetScenes:
+            case ManageBuildActions.ListProfiles:
+            case ManageBuildActions.GetActiveProfile:
+                break;
+        }
+
+        return new ManageBuildRequest(action!, target, outputPath, scenes, development,
+            options, subtarget, property, value, definesAction, buildScenes?.DeepClone() as JsonArray, profilePath);
     }
 }
 

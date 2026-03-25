@@ -486,6 +486,97 @@ public sealed class ToolCatalogTests
         AssertSyncToolWithoutCancel(tools, ToolNames.ManagePrefab);
     }
 
+    [Fact]
+    public void BuildMcpTools_ContainsManageBuild()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        AssertToolExists(tools, ToolNames.ManageBuild);
+    }
+
+    [Fact]
+    public void BuildMcpTools_ManageBuildSchema_HasActionEnum()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.ManageBuild);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var properties = Assert.IsType<JsonObject>(schema["properties"]);
+        var action = Assert.IsType<JsonObject>(properties["action"]);
+        var @enum = Assert.IsType<JsonArray>(action["enum"]);
+
+        var values = @enum.Select(node => node?.GetValue<string>()).ToList();
+        Assert.Contains(ManageBuildActions.Build, values);
+        Assert.Contains(ManageBuildActions.BuildReport, values);
+        Assert.Contains(ManageBuildActions.Validate, values);
+        Assert.Contains(ManageBuildActions.GetPlatform, values);
+        Assert.Contains(ManageBuildActions.SwitchPlatform, values);
+        Assert.Contains(ManageBuildActions.GetSettings, values);
+        Assert.Contains(ManageBuildActions.SetSettings, values);
+        Assert.Contains(ManageBuildActions.GetScenes, values);
+        Assert.Contains(ManageBuildActions.SetScenes, values);
+        Assert.Contains(ManageBuildActions.ListProfiles, values);
+        Assert.Contains(ManageBuildActions.GetActiveProfile, values);
+        Assert.Contains(ManageBuildActions.SetActiveProfile, values);
+    }
+
+    [Fact]
+    public void BuildMcpTools_ManageBuildSchema_RequiresAction()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.ManageBuild);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var required = Assert.IsType<JsonArray>(schema["required"]);
+        var requiredNames = required.Select(n => n?.GetValue<string>()).ToList();
+
+        Assert.Contains("action", requiredNames);
+        Assert.Single(requiredNames);
+    }
+
+    [Fact]
+    public void BuildMcpTools_ManageBuildSchema_HasTargetEnum()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.ManageBuild);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var properties = Assert.IsType<JsonObject>(schema["properties"]);
+        var target = Assert.IsType<JsonObject>(properties["target"]);
+        var @enum = Assert.IsType<JsonArray>(target["enum"]);
+
+        var values = @enum.Select(node => node?.GetValue<string>()).ToList();
+        Assert.Contains(BuildTargets.Windows64, values);
+        Assert.Contains(BuildTargets.Android, values);
+        Assert.Contains(BuildTargets.Ios, values);
+        Assert.Contains(BuildTargets.Webgl, values);
+    }
+
+    [Fact]
+    public void BuildMcpTools_ManageBuildSchema_HasDefinesActionEnum()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.ManageBuild);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var properties = Assert.IsType<JsonObject>(schema["properties"]);
+        var definesAction = Assert.IsType<JsonObject>(properties["defines_action"]);
+        var @enum = Assert.IsType<JsonArray>(definesAction["enum"]);
+
+        var values = @enum.Select(node => node?.GetValue<string>()).ToList();
+        Assert.Contains(DefinesActions.Set, values);
+        Assert.Contains(DefinesActions.Add, values);
+        Assert.Contains(DefinesActions.Remove, values);
+    }
+
+    [Fact]
+    public void DefaultTimeoutMs_ManageBuild_Returns600000()
+    {
+        Assert.Equal(600000, ToolCatalog.DefaultTimeoutMs(ToolNames.ManageBuild));
+    }
+
+    [Fact]
+    public void ManageBuild_MayTriggerRecompile()
+    {
+        Assert.True(ToolCatalog.Items.TryGetValue(ToolNames.ManageBuild, out var metadata));
+        Assert.True(metadata.MayTriggerRecompile);
+    }
+
     private static void AssertSyncToolWithoutCancel(JsonArray tools, string toolName)
     {
         var tool = AssertToolExists(tools, toolName);

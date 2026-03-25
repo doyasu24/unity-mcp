@@ -1182,6 +1182,140 @@ internal sealed class UnityBridge
         }, cancellationToken);
     }
 
+    public Task<ManageBuildResult> ManageBuildAsync(ManageBuildRequest request, CancellationToken cancellationToken)
+    {
+        return _scheduler.EnqueueAsync(async token =>
+        {
+            await EnsureEditorReadyAsync(token);
+            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageBuild);
+            var parameters = BuildManageBuildParameters(request);
+
+            var isReadOnly = request.Action is ManageBuildActions.GetPlatform
+                or ManageBuildActions.GetSettings or ManageBuildActions.GetScenes
+                or ManageBuildActions.ListProfiles or ManageBuildActions.GetActiveProfile
+                or ManageBuildActions.BuildReport or ManageBuildActions.Validate;
+
+            if (isReadOnly)
+            {
+                var readPayload = await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, token);
+                return new ManageBuildResult(readPayload);
+            }
+
+            // build アクション: fire-and-forget + ポーリング（RunTestsAsync と同パターン）
+            if (request.Action == ManageBuildActions.Build)
+            {
+                await EnsureEditModeAsync(token);
+
+                // ビルド開始
+                await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, token);
+
+                // ポーリングで完了を待機
+                var editorStateTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetEditorState);
+                var buildDeadline = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
+                while (DateTimeOffset.UtcNow < buildDeadline)
+                {
+                    token.ThrowIfCancellationRequested();
+                    await Task.Delay(2000, token);
+
+                    var pollPayload = await ExecuteSyncToolAsync(
+                        ToolNames.ManageBuild, new JsonObject(), editorStateTimeoutMs, token);
+
+                    // ビルド完了判定: "result" フィールドの有無で判断する。
+                    // 実行中レスポンス { "status": "building" } には "result" がなく、
+                    // 完了レスポンス（成功/失敗いずれも）には "result" が含まれる。
+                    if (pollPayload is JsonObject pollObj && pollObj.ContainsKey("result"))
+                    {
+                        return new ManageBuildResult(pollPayload);
+                    }
+                }
+
+                throw new McpException(ErrorCodes.RequestTimeout, "Build execution timed out");
+            }
+
+            // switch_platform: ドメインリロードを伴う可能性がある
+            if (request.Action == ManageBuildActions.SwitchPlatform)
+            {
+                await EnsureEditModeAsync(token);
+
+                try
+                {
+                    var switchPayload = await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, token);
+                    return new ManageBuildResult(switchPayload);
+                }
+                catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+                {
+                    // プラットフォーム切替によるドメインリロード。想定内。
+                }
+
+                await EnsureEditorReadyAsync(token);
+
+                // 切替後の状態を get_platform で確認
+                var confirmParams = new JsonObject { ["action"] = ManageBuildActions.GetPlatform };
+                var confirmPayload = await ExecuteSyncToolAsync(
+                    ToolNames.ManageBuild, confirmParams,
+                    ToolCatalog.DefaultTimeoutMs(ToolNames.GetEditorState), token);
+                return new ManageBuildResult(confirmPayload);
+            }
+
+            // set_settings / set_scenes / set_active_profile: コンパイルを伴う可能性がある
+            await EnsureEditModeAsync(token);
+
+            JsonNode mutPayload;
+            try
+            {
+                mutPayload = await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, token);
+            }
+            catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+            {
+                await EnsureEditorReadyAsync(token);
+                mutPayload = new JsonObject { ["action"] = request.Action };
+            }
+
+            await WaitForCompilationAsync(mutPayload, token);
+            return new ManageBuildResult(mutPayload);
+        }, cancellationToken);
+    }
+
+    private static JsonObject BuildManageBuildParameters(ManageBuildRequest request)
+    {
+        var parameters = new JsonObject { ["action"] = request.Action };
+
+        if (!string.IsNullOrWhiteSpace(request.Target))
+            parameters["target"] = request.Target;
+        if (!string.IsNullOrWhiteSpace(request.OutputPath))
+            parameters["output_path"] = request.OutputPath;
+        if (request.Scenes is { Length: > 0 })
+        {
+            var arr = new JsonArray();
+            foreach (var s in request.Scenes) arr.Add(s);
+            parameters["scenes"] = arr;
+        }
+
+        if (request.Development.HasValue)
+            parameters["development"] = request.Development.Value;
+        if (request.Options is { Length: > 0 })
+        {
+            var arr = new JsonArray();
+            foreach (var o in request.Options) arr.Add(o);
+            parameters["options"] = arr;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Subtarget))
+            parameters["subtarget"] = request.Subtarget;
+        if (!string.IsNullOrWhiteSpace(request.Property))
+            parameters["property"] = request.Property;
+        if (request.Value != null)
+            parameters["value"] = request.Value;
+        if (!string.IsNullOrWhiteSpace(request.DefinesAction))
+            parameters["defines_action"] = request.DefinesAction;
+        if (request.BuildScenes != null)
+            parameters["build_scenes"] = request.BuildScenes.DeepClone();
+        if (!string.IsNullOrWhiteSpace(request.ProfilePath))
+            parameters["profile_path"] = request.ProfilePath;
+
+        return parameters;
+    }
+
     /// <summary>
     /// Plugin が compiling=false を返したケースでのフォールバック確認。
     /// 500ms 後に get_editor_state を1回確認し、ドメインリロードやコンパイル開始を検知する。

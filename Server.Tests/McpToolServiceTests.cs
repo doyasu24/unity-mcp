@@ -896,6 +896,190 @@ public sealed class McpToolServiceTests
         Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
     }
 
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageBuild_InvalidAction()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject { ["action"] = "invalid" };
+        var result = await service.CallToolAsync(ToolNames.ManageBuild, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageBuild_BuildMissingOutputPath()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject { ["action"] = "build" };
+        var result = await service.CallToolAsync(ToolNames.ManageBuild, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageBuild_BuildInvalidTarget()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["action"] = "build",
+            ["output_path"] = "Builds/Test",
+            ["target"] = "invalid_platform",
+        };
+        var result = await service.CallToolAsync(ToolNames.ManageBuild, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageBuild_BuildInvalidOption()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["action"] = "build",
+            ["output_path"] = "Builds/Test",
+            ["options"] = new JsonArray("invalid_option"),
+        };
+        var result = await service.CallToolAsync(ToolNames.ManageBuild, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageBuild_SwitchPlatformMissingTarget()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject { ["action"] = "switch_platform" };
+        var result = await service.CallToolAsync(ToolNames.ManageBuild, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageBuild_SwitchPlatformInvalidTarget()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["action"] = "switch_platform",
+            ["target"] = "unknown",
+        };
+        var result = await service.CallToolAsync(ToolNames.ManageBuild, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageBuild_GetSettingsMissingProperty()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject { ["action"] = "get_settings" };
+        var result = await service.CallToolAsync(ToolNames.ManageBuild, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageBuild_GetSettingsInvalidProperty()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["action"] = "get_settings",
+            ["property"] = "unknown_property",
+        };
+        var result = await service.CallToolAsync(ToolNames.ManageBuild, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageBuild_SetSettingsMissingValue()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["action"] = "set_settings",
+            ["property"] = "product_name",
+        };
+        var result = await service.CallToolAsync(ToolNames.ManageBuild, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageBuild_SetSettingsInvalidDefinesAction()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject
+        {
+            ["action"] = "set_settings",
+            ["property"] = "defines",
+            ["value"] = "SYMBOL",
+            ["defines_action"] = "invalid",
+        };
+        var result = await service.CallToolAsync(ToolNames.ManageBuild, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageBuild_SetScenesMissingBuildScenes()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject { ["action"] = "set_scenes" };
+        var result = await service.CallToolAsync(ToolNames.ManageBuild, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CallToolAsync_ReturnsError_ForManageBuild_SetActiveProfileMissingPath()
+    {
+        var service = CreateService(new RuntimeState());
+
+        var args = new JsonObject { ["action"] = "set_active_profile" };
+        var result = await service.CallToolAsync(ToolNames.ManageBuild, args, CancellationToken.None);
+
+        Assert.True(result["isError"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
+        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
+    }
+
     private static McpToolService CreateService(RuntimeState runtimeState)
     {
         var scheduler = new RequestScheduler(Constants.QueueMaxSize);

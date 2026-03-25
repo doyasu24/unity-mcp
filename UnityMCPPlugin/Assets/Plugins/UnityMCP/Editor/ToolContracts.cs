@@ -32,6 +32,7 @@ namespace UnityMcpPlugin
         internal const string CaptureScreenshot = "capture_screenshot";
         internal const string ManageAsmdef = "manage_asmdef";
         internal const string ManagePrefab = "manage_prefab";
+        internal const string ManageBuild = "manage_build";
     }
 
     internal static class ToolLimits
@@ -235,6 +236,64 @@ namespace UnityMcpPlugin
     {
         internal const int MaxResultsDefault = 100;
         internal const int MaxResultsMax = 1000;
+    }
+
+    internal static class ManageBuildActions
+    {
+        internal const string Build = "build";
+        internal const string BuildReport = "build_report";
+        internal const string Validate = "validate";
+        internal const string GetPlatform = "get_platform";
+        internal const string SwitchPlatform = "switch_platform";
+        internal const string GetSettings = "get_settings";
+        internal const string SetSettings = "set_settings";
+        internal const string GetScenes = "get_scenes";
+        internal const string SetScenes = "set_scenes";
+        internal const string ListProfiles = "list_profiles";
+        internal const string GetActiveProfile = "get_active_profile";
+        internal const string SetActiveProfile = "set_active_profile";
+
+        internal static bool IsSupported(string action)
+        {
+            return action == Build || action == BuildReport || action == Validate
+                || action == GetPlatform || action == SwitchPlatform
+                || action == GetSettings || action == SetSettings
+                || action == GetScenes || action == SetScenes
+                || action == ListProfiles || action == GetActiveProfile || action == SetActiveProfile;
+        }
+
+        internal static bool IsProfileAction(string action)
+        {
+            return action == ListProfiles || action == GetActiveProfile || action == SetActiveProfile;
+        }
+    }
+
+    internal static class BuildSettingsProperties
+    {
+        internal const string ProductName = "product_name";
+        internal const string CompanyName = "company_name";
+        internal const string Version = "version";
+        internal const string BundleId = "bundle_id";
+        internal const string ScriptingBackend = "scripting_backend";
+        internal const string Defines = "defines";
+
+        internal static bool IsSupported(string property)
+        {
+            return property == ProductName || property == CompanyName || property == Version
+                || property == BundleId || property == ScriptingBackend || property == Defines;
+        }
+    }
+
+    internal static class DefinesActions
+    {
+        internal const string Set = "set";
+        internal const string Add = "add";
+        internal const string Remove = "remove";
+
+        internal static bool IsSupported(string action)
+        {
+            return action == Set || action == Add || action == Remove;
+        }
     }
 
     internal static class ScreenshotSources

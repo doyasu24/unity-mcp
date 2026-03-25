@@ -125,6 +125,26 @@ internal static class JsonHelpers
         return node as JsonObject ?? new JsonObject();
     }
 
+    public static string[]? GetStringArray(JsonObject obj, string propertyName)
+    {
+        if (!obj.TryGetPropertyValue(propertyName, out var node) || node is not JsonArray arr || arr.Count == 0)
+        {
+            return null;
+        }
+
+        var list = new List<string>(arr.Count);
+        foreach (var item in arr)
+        {
+            var val = item?.GetValue<string>();
+            if (!string.IsNullOrWhiteSpace(val))
+            {
+                list.Add(val);
+            }
+        }
+
+        return list.Count > 0 ? list.ToArray() : null;
+    }
+
     public static JsonNode? CloneNode(JsonNode? node)
     {
         return node?.DeepClone();
