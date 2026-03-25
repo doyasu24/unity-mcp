@@ -25,7 +25,7 @@ namespace UnityMcpPlugin.Tools
         {
             if (target == prefabRoot)
             {
-                return "";
+                return "/";
             }
 
             var t = target.transform;

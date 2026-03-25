@@ -98,8 +98,21 @@ internal static class ToolCatalog
             15000,
             300000,
             false,
-            "Refreshes Unity Editor assets. Server monitors editor state and waits for any triggered recompilation to complete. Returns errors (compile errors, import errors) in the 'errors' field when present. Automatically stops play mode if active.",
-            EmptyObjectSchema(),
+            "Refreshes Unity Editor assets. Server monitors editor state and waits for any triggered recompilation to complete. Returns errors (compile errors, import errors) in the 'errors' field when present. Automatically stops play mode if active. " +
+            "Set force=true to reimport all assets regardless of timestamps (useful when external tools modified files).",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["force"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["description"] = "Force reimport all assets ignoring timestamps. Use when external tools (hooks, scripts) modified files and normal refresh doesn't detect changes. Default: false.",
+                    },
+                },
+                ["additionalProperties"] = false,
+            },
             MayTriggerRecompile: true),
         [ToolNames.ControlPlayMode] = new(
             ToolNames.ControlPlayMode,

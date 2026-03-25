@@ -93,7 +93,7 @@ internal sealed class McpToolService
             ToolNames.GetPlayModeState => (await _unityBridge.GetPlayModeStateAsync(cancellationToken)).Payload,
             ToolNames.ReadConsole => (await _unityBridge.ReadConsoleAsync(ParseReadConsoleRequest(arguments), cancellationToken)).Payload,
             ToolNames.ClearConsole => (await _unityBridge.ClearConsoleAsync(cancellationToken)).Payload,
-            ToolNames.RefreshAssets => (await _unityBridge.RefreshAssetsAsync(cancellationToken)).Payload,
+            ToolNames.RefreshAssets => (await _unityBridge.RefreshAssetsAsync(JsonHelpers.GetBool(arguments, "force") ?? false, cancellationToken)).Payload,
             ToolNames.ControlPlayMode => (await _unityBridge.ControlPlayModeAsync(ParseControlPlayModeRequest(arguments), cancellationToken)).Payload,
             ToolNames.RunTests => (await _unityBridge.RunTestsAsync(ParseRunTestsRequest(arguments), cancellationToken)).Payload,
             ToolNames.GetHierarchy => await ExecuteGetHierarchyAsync(arguments, cancellationToken),

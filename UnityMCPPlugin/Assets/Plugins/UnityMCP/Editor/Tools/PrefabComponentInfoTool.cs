@@ -50,6 +50,8 @@ namespace UnityMcpPlugin.Tools
             {
                 var listing = ComponentInfoTool.BuildComponentListing(go, components);
                 listing["prefab_path"] = prefabPath;
+                // BuildComponentListing はシーン用の絶対パスを設定するため、Prefab 用の相対パスに上書き
+                listing["game_object_path"] = PrefabGameObjectResolver.GetRelativePath(prefabAsset, go);
                 return listing;
             }
 

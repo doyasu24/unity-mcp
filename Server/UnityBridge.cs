@@ -182,7 +182,7 @@ internal sealed class UnityBridge
         }, cancellationToken);
     }
 
-    public Task<RefreshAssetsResult> RefreshAssetsAsync(CancellationToken cancellationToken)
+    public Task<RefreshAssetsResult> RefreshAssetsAsync(bool force, CancellationToken cancellationToken)
     {
         return _scheduler.EnqueueAsync(async token =>
         {
@@ -192,11 +192,14 @@ internal sealed class UnityBridge
             await EnsureEditModeAsync(token);
 
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RefreshAssets);
+            var toolParams = new JsonObject();
+            if (force) toolParams["force"] = true;
+
             JsonNode payload;
             try
             {
                 payload = await ExecuteSyncToolAsync(
-                    ToolNames.RefreshAssets, new JsonObject(), timeoutMs, token);
+                    ToolNames.RefreshAssets, toolParams, timeoutMs, token);
             }
             catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
             {
