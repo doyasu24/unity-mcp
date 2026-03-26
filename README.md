@@ -37,6 +37,9 @@ graph LR
 | `find_assets` | Searches for assets in the project using AssetDatabase filter syntax. Supports pagination via `offset`. |
 | `get_asset_info` | Returns detailed metadata for a Unity asset at the specified path. |
 | `manage_asset` | Creates or deletes Unity assets, and manages material properties: get/set shader properties, change shaders, and control shader keywords. |
+| `manage_prefab` | Creates, applies, or reverts Prefab assets. |
+| **Build** | |
+| `manage_build` | Manages Unity build pipeline: get/set build settings, add/remove/reorder scenes, and execute builds. |
 | **Screenshot** | |
 | `capture_screenshot` | Captures a screenshot from Game View or Scene View. Returns the image inline (base64 PNG) so the LLM can see it directly, and also saves a copy to `<project>/Screenshots/`. |
 
@@ -63,7 +66,7 @@ For `get_hierarchy`, when `offset > 0` the response returns a flat `game_objects
 2. Set up a project-local `dotnet tool` version (pinned per project):
    ```bash
    dotnet new tool-manifest
-   dotnet tool install --local Doyasu24.UnityMcp.Tool --version 0.1.1
+   dotnet tool install --local Doyasu24.UnityMcp.Tool --version 0.1.2
    ```
 3. Start the Unity MCP server (default port: `48091`):
    ```bash
@@ -80,7 +83,7 @@ For `get_hierarchy`, when `offset > 0` the response returns a flat `game_objects
 
 Add to Package Manager:
 
-`https://github.com/doyasu24/unity-mcp.git?path=UnityMCPPlugin/Assets/Plugins/UnityMCP#v0.1.1`
+`https://github.com/doyasu24/unity-mcp.git?path=UnityMCPPlugin/Assets/Plugins/UnityMCP#v0.1.2`
 
 ### Claude Code Setup
 
