@@ -186,6 +186,10 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
+            // App Nap による遅延を防ぐため、操作前に Editor を前面に出す
+            await using var focusScope = await EditorFocusScope.ActivateAsync(
+                _runtimeState.GetEditorPid());
+
             await EnsureEditorReadyAsync(token);
 
             // Play モード中は AssetDatabase.Refresh が動作しないため、先に停止する
@@ -1487,6 +1491,10 @@ internal sealed class UnityBridge
     {
         return _scheduler.EnqueueAsync(async token =>
         {
+            // App Nap による遅延を防ぐため、操作前に Editor を前面に出す
+            await using var focusScope = await EditorFocusScope.ActivateAsync(
+                _runtimeState.GetEditorPid());
+
             await EnsureEditorReadyAsync(token);
 
             // アセットをリフレッシュし、コンパイル完了を待機する。

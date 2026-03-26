@@ -339,6 +339,31 @@ internal sealed class RuntimeState
         return waitingReason;
     }
 
+    /// <summary>
+    /// editor_instance_id ("{pid}:{project_path}/Assets") から Editor の PID を抽出する。
+    /// 未接続時やパース失敗時は 0 を返す。
+    /// </summary>
+    public int GetEditorPid()
+    {
+        lock (_gate)
+        {
+            return ParseEditorPid(_activeEditorInstanceId);
+        }
+    }
+
+    internal static int ParseEditorPid(string? editorInstanceId)
+    {
+        if (string.IsNullOrEmpty(editorInstanceId))
+            return 0;
+
+        var colonIndex = editorInstanceId.IndexOf(':');
+        if (colonIndex <= 0)
+            return 0;
+
+        var pidSpan = editorInstanceId.AsSpan(0, colonIndex);
+        return int.TryParse(pidSpan, out var pid) ? pid : 0;
+    }
+
     private static string? NormalizeEditorInstanceId(string? editorInstanceId)
     {
         return string.IsNullOrWhiteSpace(editorInstanceId)
