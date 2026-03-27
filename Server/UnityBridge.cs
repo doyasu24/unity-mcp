@@ -39,8 +39,11 @@ internal sealed class UnityBridge
     }
 
     private readonly RuntimeState _runtimeState;
-    private readonly RequestScheduler _scheduler;
     private readonly ILogger<UnityBridge> _logger;
+    /// <summary>multi-step workflow（refresh_assets, control_play_mode, run_tests, manage_build, manage_asmdef mutation）の排他実行ロック。</summary>
+    private readonly SemaphoreSlim _workflowLock = new(1, 1);
+    /// <summary>WebSocket フレームのインターリーブを防止する送信ロック。</summary>
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly UnitySessionRegistry _sessionRegistry = new();
     private readonly ConcurrentDictionary<string, PendingRequest> _pendingRequests = new(StringComparer.Ordinal);
     private readonly LogThrottle _sessionConnectLog = new(LifecycleLogThrottleInterval);
@@ -53,10 +56,9 @@ internal sealed class UnityBridge
     /// <summary>初回接続を判定するフラグ。connect_attempt_seq は domain reload でリセットされるため使用不可。</summary>
     private int _hasEverConnected;
 
-    public UnityBridge(RuntimeState runtimeState, RequestScheduler scheduler, ILogger<UnityBridge> logger)
+    public UnityBridge(RuntimeState runtimeState, ILogger<UnityBridge> logger)
     {
         _runtimeState = runtimeState;
-        _scheduler = scheduler;
         _logger = logger;
     }
 
@@ -130,70 +132,64 @@ internal sealed class UnityBridge
         }
     }
 
-    public Task<ReadConsoleResult> ReadConsoleAsync(ReadConsoleRequest request, CancellationToken cancellationToken)
+    public async Task<ReadConsoleResult> ReadConsoleAsync(ReadConsoleRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ReadConsole);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ReadConsole);
-            var parameters = new JsonObject
-            {
-                ["max_entries"] = request.MaxEntries,
-                ["stack_trace_lines"] = request.StackTraceLines,
-                ["deduplicate"] = request.Deduplicate,
-                ["offset"] = request.Offset,
-            };
-            if (request.LogType is { Length: > 0 })
-            {
-                parameters["log_type"] = new JsonArray(request.LogType.Select(t => (JsonNode)t).ToArray());
-            }
-            if (request.MessagePattern is not null)
-            {
-                parameters["message_pattern"] = request.MessagePattern;
-            }
-            var payload = await ExecuteSyncToolAsync(
-                ToolNames.ReadConsole,
-                parameters,
-                timeoutMs,
-                token);
-            return new ReadConsoleResult(payload);
-        }, cancellationToken);
+            ["max_entries"] = request.MaxEntries,
+            ["stack_trace_lines"] = request.StackTraceLines,
+            ["deduplicate"] = request.Deduplicate,
+            ["offset"] = request.Offset,
+        };
+        if (request.LogType is { Length: > 0 })
+        {
+            parameters["log_type"] = new JsonArray(request.LogType.Select(t => (JsonNode)t).ToArray());
+        }
+        if (request.MessagePattern is not null)
+        {
+            parameters["message_pattern"] = request.MessagePattern;
+        }
+        var payload = await ExecuteSyncToolAsync(
+            ToolNames.ReadConsole,
+            parameters,
+            timeoutMs,
+            cancellationToken);
+        return new ReadConsoleResult(payload);
     }
 
-    public Task<GetPlayModeStateResult> GetPlayModeStateAsync(CancellationToken cancellationToken)
+    public async Task<GetPlayModeStateResult> GetPlayModeStateAsync(CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
-        {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPlayModeState);
-            var payload = await ExecuteSyncToolAsync(ToolNames.GetPlayModeState, new JsonObject(), timeoutMs, token);
-            return new GetPlayModeStateResult(payload);
-        }, cancellationToken);
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPlayModeState);
+        var payload = await ExecuteSyncToolAsync(ToolNames.GetPlayModeState, new JsonObject(), timeoutMs, cancellationToken);
+        return new GetPlayModeStateResult(payload);
     }
 
-    public Task<ClearConsoleResult> ClearConsoleAsync(CancellationToken cancellationToken)
+    public async Task<ClearConsoleResult> ClearConsoleAsync(CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
-        {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ClearConsole);
-            var payload = await ExecuteSyncToolAsync(ToolNames.ClearConsole, new JsonObject(), timeoutMs, token);
-            return new ClearConsoleResult(payload);
-        }, cancellationToken);
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ClearConsole);
+        var payload = await ExecuteSyncToolAsync(ToolNames.ClearConsole, new JsonObject(), timeoutMs, cancellationToken);
+        return new ClearConsoleResult(payload);
     }
 
-    public Task<RefreshAssetsResult> RefreshAssetsAsync(bool force, CancellationToken cancellationToken)
+    public async Task<RefreshAssetsResult> RefreshAssetsAsync(bool force, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
-        {
-            // App Nap による遅延を防ぐため、操作前に Editor を前面に出す
-            await using var focusScope = await EditorFocusScope.ActivateAsync(
-                _runtimeState.GetEditorPid());
+        // App Nap による遅延を防ぐため、操作前に Editor を前面に出す
+        await using var focusScope = await EditorFocusScope.ActivateAsync(
+            _runtimeState.GetEditorPid());
 
-            await EnsureEditorReadyAsync(token);
+        await EnsureEditorReadyAsync(cancellationToken);
+        await _workflowLock.WaitAsync(cancellationToken);
+        try
+        {
+            // lock 待機中に状態が変わりうるため再チェック
+            await EnsureEditorReadyAsync(cancellationToken);
 
             // Play モード中は AssetDatabase.Refresh が動作しないため、先に停止する
-            await EnsureEditModeAsync(token);
+            await EnsureEditModeAsync(cancellationToken);
 
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RefreshAssets);
             var toolParams = new JsonObject();
@@ -203,12 +199,12 @@ internal sealed class UnityBridge
             try
             {
                 payload = await ExecuteSyncToolAsync(
-                    ToolNames.RefreshAssets, toolParams, timeoutMs, token);
+                    ToolNames.RefreshAssets, toolParams, timeoutMs, cancellationToken);
             }
             catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
             {
                 // ドメインリロードでレスポンス前に切断。Refresh は実行済み。
-                await EnsureEditorReadyAsync(token);
+                await EnsureEditorReadyAsync(cancellationToken);
                 payload = new JsonObject { ["refreshed"] = true, ["compiling"] = true };
             }
 
@@ -228,23 +224,27 @@ internal sealed class UnityBridge
             if (compiling)
             {
                 // コンパイル中 → ポーリングで完了待ち → エラー取得
-                await WaitForCompilationAsync(payload, token);
+                await WaitForCompilationAsync(payload, cancellationToken);
             }
             else if (compilationFailed)
             {
                 // 既存のコンパイルエラー → エラー取得のみ
-                await AppendErrorsIfAny(payload, token);
+                await AppendErrorsIfAny(payload, cancellationToken);
             }
             else
             {
                 // ドメインリロード検知フォールバック:
                 // Refresh() 後に compiling=false でも、コンパイル成功→ドメインリロードが
                 // 遅延発生するケースがある。500ms 後に1回確認ポーリングを行う。
-                await CheckForDelayedCompilationAsync(payload, token);
+                await CheckForDelayedCompilationAsync(payload, cancellationToken);
             }
 
             return new RefreshAssetsResult(payload);
-        }, cancellationToken);
+        }
+        finally
+        {
+            _workflowLock.Release();
+        }
     }
 
     /// <summary>
@@ -291,18 +291,20 @@ internal sealed class UnityBridge
         return true;
     }
 
-    public Task<ControlPlayModeResult> ControlPlayModeAsync(ControlPlayModeRequest request, CancellationToken cancellationToken)
+    public async Task<ControlPlayModeResult> ControlPlayModeAsync(ControlPlayModeRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        await _workflowLock.WaitAsync(cancellationToken);
+        try
         {
-            await EnsureEditorReadyAsync(token);
+            await EnsureEditorReadyAsync(cancellationToken);
 
             // Play Mode 開始前にコンパイルエラーがないことを確認する。
             // EditorApplication.isPlaying = true はリクエストであり、コンパイルエラーがあると
             // Unity が黙って拒否するため、サーバー側で事前検証して明確なエラーを返す。
             if (string.Equals(request.Action, PlayModeActions.Start, StringComparison.Ordinal))
             {
-                await ThrowIfCompileErrorsAsync(token);
+                await ThrowIfCompileErrorsAsync(cancellationToken);
             }
 
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ControlPlayMode);
@@ -315,16 +317,13 @@ internal sealed class UnityBridge
                         ["action"] = request.Action,
                     },
                     timeoutMs,
-                    token);
+                    cancellationToken);
                 return new ControlPlayModeResult(payload);
             }
             catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout &&
                                           string.Equals(request.Action, PlayModeActions.Start, StringComparison.Ordinal))
             {
-                // Domain reload during play mode entry disconnects the Plugin before
-                // the response arrives. Wait for the Editor to reconnect and return success
-                // since the action was accepted.
-                await EnsureEditorReadyAsync(token);
+                await EnsureEditorReadyAsync(cancellationToken);
                 return new ControlPlayModeResult(new JsonObject
                 {
                     ["action"] = request.Action,
@@ -337,10 +336,7 @@ internal sealed class UnityBridge
             catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout &&
                                           string.Equals(request.Action, PlayModeActions.Stop, StringComparison.Ordinal))
             {
-                // Domain reload during play mode exit disconnects the Plugin before
-                // the response arrives. Wait for the Editor to reconnect and return success
-                // since the action was accepted.
-                await EnsureEditorReadyAsync(token);
+                await EnsureEditorReadyAsync(cancellationToken);
                 return new ControlPlayModeResult(new JsonObject
                 {
                     ["action"] = request.Action,
@@ -350,7 +346,11 @@ internal sealed class UnityBridge
                     ["is_playing_or_will_change_playmode"] = false,
                 });
             }
-        }, cancellationToken);
+        }
+        finally
+        {
+            _workflowLock.Release();
+        }
     }
 
     private async Task<JsonNode> ExecuteSyncToolAsync(
@@ -402,834 +402,726 @@ internal sealed class UnityBridge
             wrappedDetails);
     }
 
-    public Task<GetSceneHierarchyResult> GetSceneHierarchyAsync(GetSceneHierarchyRequest request, CancellationToken cancellationToken)
+    public async Task<GetSceneHierarchyResult> GetSceneHierarchyAsync(GetSceneHierarchyRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetSceneHierarchy);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetSceneHierarchy);
-            var parameters = new JsonObject
-            {
-                ["max_depth"] = request.MaxDepth,
-                ["max_game_objects"] = request.MaxGameObjects,
-                ["offset"] = request.Offset,
-            };
-            if (!string.IsNullOrWhiteSpace(request.RootPath))
-            {
-                parameters["root_path"] = request.RootPath;
-            }
-            if (request.ComponentFilter is { Length: > 0 })
-            {
-                parameters["component_filter"] = new JsonArray(request.ComponentFilter.Select(s => (JsonNode)s).ToArray());
-            }
+            ["max_depth"] = request.MaxDepth,
+            ["max_game_objects"] = request.MaxGameObjects,
+            ["offset"] = request.Offset,
+        };
+        if (!string.IsNullOrWhiteSpace(request.RootPath))
+        {
+            parameters["root_path"] = request.RootPath;
+        }
+        if (request.ComponentFilter is { Length: > 0 })
+        {
+            parameters["component_filter"] = new JsonArray(request.ComponentFilter.Select(s => (JsonNode)s).ToArray());
+        }
 
-            var payload = await ExecuteSyncToolAsync(ToolNames.GetSceneHierarchy, parameters, timeoutMs, token);
-            return new GetSceneHierarchyResult(payload);
-        }, cancellationToken);
+        var payload = await ExecuteSyncToolAsync(ToolNames.GetSceneHierarchy, parameters, timeoutMs, cancellationToken);
+        return new GetSceneHierarchyResult(payload);
     }
 
-    public Task<GetSceneComponentInfoResult> GetSceneComponentInfoAsync(GetSceneComponentInfoRequest request, CancellationToken cancellationToken)
+    public async Task<GetSceneComponentInfoResult> GetSceneComponentInfoAsync(GetSceneComponentInfoRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetSceneComponentInfo);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetSceneComponentInfo);
-            var parameters = new JsonObject
+            ["game_object_path"] = request.GameObjectPath,
+            ["max_array_elements"] = request.MaxArrayElements,
+        };
+        if (request.Index.HasValue)
+        {
+            parameters["index"] = request.Index.Value;
+        }
+
+        if (request.Fields is not null)
+        {
+            var fieldsArray = new JsonArray();
+            foreach (var f in request.Fields)
             {
-                ["game_object_path"] = request.GameObjectPath,
-                ["max_array_elements"] = request.MaxArrayElements,
-            };
-            if (request.Index.HasValue)
-            {
-                parameters["index"] = request.Index.Value;
+                fieldsArray.Add(f);
             }
 
-            if (request.Fields is not null)
-            {
-                var fieldsArray = new JsonArray();
-                foreach (var f in request.Fields)
-                {
-                    fieldsArray.Add(f);
-                }
+            parameters["fields"] = fieldsArray;
+        }
 
-                parameters["fields"] = fieldsArray;
-            }
-
-            var payload = await ExecuteSyncToolAsync(ToolNames.GetSceneComponentInfo, parameters, timeoutMs, token);
-            return new GetSceneComponentInfoResult(payload);
-        }, cancellationToken);
+        var payload = await ExecuteSyncToolAsync(ToolNames.GetSceneComponentInfo, parameters, timeoutMs, cancellationToken);
+        return new GetSceneComponentInfoResult(payload);
     }
 
-    public Task<ManageSceneComponentResult> ManageSceneComponentAsync(ManageSceneComponentRequest request, CancellationToken cancellationToken)
+    public async Task<ManageSceneComponentResult> ManageSceneComponentAsync(ManageSceneComponentRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageSceneComponent);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageSceneComponent);
-            var parameters = new JsonObject
-            {
-                ["action"] = request.Action,
-                ["game_object_path"] = request.GameObjectPath,
-            };
-            if (!string.IsNullOrWhiteSpace(request.ComponentType))
-            {
-                parameters["component_type"] = request.ComponentType;
-            }
+            ["action"] = request.Action,
+            ["game_object_path"] = request.GameObjectPath,
+        };
+        if (!string.IsNullOrWhiteSpace(request.ComponentType))
+        {
+            parameters["component_type"] = request.ComponentType;
+        }
 
-            if (request.Index.HasValue)
-            {
-                parameters["index"] = request.Index.Value;
-            }
+        if (request.Index.HasValue)
+        {
+            parameters["index"] = request.Index.Value;
+        }
 
-            if (request.NewIndex.HasValue)
-            {
-                parameters["new_index"] = request.NewIndex.Value;
-            }
+        if (request.NewIndex.HasValue)
+        {
+            parameters["new_index"] = request.NewIndex.Value;
+        }
 
-            if (request.Fields is not null)
-            {
-                parameters["fields"] = request.Fields.DeepClone();
-            }
+        if (request.Fields is not null)
+        {
+            parameters["fields"] = request.Fields.DeepClone();
+        }
 
-            var payload = await ExecuteSyncToolAsync(ToolNames.ManageSceneComponent, parameters, timeoutMs, token);
-            return new ManageSceneComponentResult(payload);
-        }, cancellationToken);
+        var payload = await ExecuteSyncToolAsync(ToolNames.ManageSceneComponent, parameters, timeoutMs, cancellationToken);
+        return new ManageSceneComponentResult(payload);
     }
 
-    public Task<GetPrefabHierarchyResult> GetPrefabHierarchyAsync(GetPrefabHierarchyRequest request, CancellationToken cancellationToken)
+    public async Task<GetPrefabHierarchyResult> GetPrefabHierarchyAsync(GetPrefabHierarchyRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPrefabHierarchy);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPrefabHierarchy);
-            var parameters = new JsonObject
-            {
-                ["prefab_path"] = request.PrefabPath,
-                ["max_depth"] = request.MaxDepth,
-                ["max_game_objects"] = request.MaxGameObjects,
-                ["offset"] = request.Offset,
-            };
-            if (!string.IsNullOrWhiteSpace(request.GameObjectPath))
-            {
-                parameters["game_object_path"] = request.GameObjectPath;
-            }
-            if (request.ComponentFilter is { Length: > 0 })
-            {
-                parameters["component_filter"] = new JsonArray(request.ComponentFilter.Select(s => (JsonNode)s).ToArray());
-            }
+            ["prefab_path"] = request.PrefabPath,
+            ["max_depth"] = request.MaxDepth,
+            ["max_game_objects"] = request.MaxGameObjects,
+            ["offset"] = request.Offset,
+        };
+        if (!string.IsNullOrWhiteSpace(request.GameObjectPath))
+        {
+            parameters["game_object_path"] = request.GameObjectPath;
+        }
+        if (request.ComponentFilter is { Length: > 0 })
+        {
+            parameters["component_filter"] = new JsonArray(request.ComponentFilter.Select(s => (JsonNode)s).ToArray());
+        }
 
-            var payload = await ExecuteSyncToolAsync(ToolNames.GetPrefabHierarchy, parameters, timeoutMs, token);
-            return new GetPrefabHierarchyResult(payload);
-        }, cancellationToken);
+        var payload = await ExecuteSyncToolAsync(ToolNames.GetPrefabHierarchy, parameters, timeoutMs, cancellationToken);
+        return new GetPrefabHierarchyResult(payload);
     }
 
-    public Task<GetPrefabComponentInfoResult> GetPrefabComponentInfoAsync(GetPrefabComponentInfoRequest request, CancellationToken cancellationToken)
+    public async Task<GetPrefabComponentInfoResult> GetPrefabComponentInfoAsync(GetPrefabComponentInfoRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPrefabComponentInfo);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPrefabComponentInfo);
-            var parameters = new JsonObject
+            ["prefab_path"] = request.PrefabPath,
+            ["game_object_path"] = request.GameObjectPath,
+            ["max_array_elements"] = request.MaxArrayElements,
+        };
+        if (request.Index.HasValue)
+        {
+            parameters["index"] = request.Index.Value;
+        }
+
+        if (request.Fields is not null)
+        {
+            var fieldsArray = new JsonArray();
+            foreach (var f in request.Fields)
             {
-                ["prefab_path"] = request.PrefabPath,
-                ["game_object_path"] = request.GameObjectPath,
-                ["max_array_elements"] = request.MaxArrayElements,
-            };
-            if (request.Index.HasValue)
-            {
-                parameters["index"] = request.Index.Value;
+                fieldsArray.Add(f);
             }
 
-            if (request.Fields is not null)
-            {
-                var fieldsArray = new JsonArray();
-                foreach (var f in request.Fields)
-                {
-                    fieldsArray.Add(f);
-                }
+            parameters["fields"] = fieldsArray;
+        }
 
-                parameters["fields"] = fieldsArray;
-            }
-
-            var payload = await ExecuteSyncToolAsync(ToolNames.GetPrefabComponentInfo, parameters, timeoutMs, token);
-            return new GetPrefabComponentInfoResult(payload);
-        }, cancellationToken);
+        var payload = await ExecuteSyncToolAsync(ToolNames.GetPrefabComponentInfo, parameters, timeoutMs, cancellationToken);
+        return new GetPrefabComponentInfoResult(payload);
     }
 
-    public Task<ManagePrefabComponentResult> ManagePrefabComponentAsync(ManagePrefabComponentRequest request, CancellationToken cancellationToken)
+    public async Task<ManagePrefabComponentResult> ManagePrefabComponentAsync(ManagePrefabComponentRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManagePrefabComponent);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManagePrefabComponent);
-            var parameters = new JsonObject
-            {
-                ["prefab_path"] = request.PrefabPath,
-                ["action"] = request.Action,
-                ["game_object_path"] = request.GameObjectPath,
-            };
-            if (!string.IsNullOrWhiteSpace(request.ComponentType))
-            {
-                parameters["component_type"] = request.ComponentType;
-            }
+            ["prefab_path"] = request.PrefabPath,
+            ["action"] = request.Action,
+            ["game_object_path"] = request.GameObjectPath,
+        };
+        if (!string.IsNullOrWhiteSpace(request.ComponentType))
+        {
+            parameters["component_type"] = request.ComponentType;
+        }
 
-            if (request.Index.HasValue)
-            {
-                parameters["index"] = request.Index.Value;
-            }
+        if (request.Index.HasValue)
+        {
+            parameters["index"] = request.Index.Value;
+        }
 
-            if (request.NewIndex.HasValue)
-            {
-                parameters["new_index"] = request.NewIndex.Value;
-            }
+        if (request.NewIndex.HasValue)
+        {
+            parameters["new_index"] = request.NewIndex.Value;
+        }
 
-            if (request.Fields is not null)
-            {
-                parameters["fields"] = request.Fields.DeepClone();
-            }
+        if (request.Fields is not null)
+        {
+            parameters["fields"] = request.Fields.DeepClone();
+        }
 
-            var payload = await ExecuteSyncToolAsync(ToolNames.ManagePrefabComponent, parameters, timeoutMs, token);
-            return new ManagePrefabComponentResult(payload);
-        }, cancellationToken);
+        var payload = await ExecuteSyncToolAsync(ToolNames.ManagePrefabComponent, parameters, timeoutMs, cancellationToken);
+        return new ManagePrefabComponentResult(payload);
     }
 
-    public Task<ManageSceneGameObjectResult> ManageSceneGameObjectAsync(ManageSceneGameObjectRequest request, CancellationToken cancellationToken)
+    public async Task<ManageSceneGameObjectResult> ManageSceneGameObjectAsync(ManageSceneGameObjectRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageSceneGameObject);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageSceneGameObject);
-            var parameters = new JsonObject
-            {
-                ["action"] = request.Action,
-            };
-            if (!string.IsNullOrWhiteSpace(request.GameObjectPath))
-            {
-                parameters["game_object_path"] = request.GameObjectPath;
-            }
+            ["action"] = request.Action,
+        };
+        if (!string.IsNullOrWhiteSpace(request.GameObjectPath))
+        {
+            parameters["game_object_path"] = request.GameObjectPath;
+        }
 
-            if (!string.IsNullOrWhiteSpace(request.ParentPath))
-            {
-                parameters["parent_path"] = request.ParentPath;
-            }
+        if (!string.IsNullOrWhiteSpace(request.ParentPath))
+        {
+            parameters["parent_path"] = request.ParentPath;
+        }
 
-            if (!string.IsNullOrWhiteSpace(request.Name))
-            {
-                parameters["name"] = request.Name;
-            }
+        if (!string.IsNullOrWhiteSpace(request.Name))
+        {
+            parameters["name"] = request.Name;
+        }
 
-            if (!string.IsNullOrWhiteSpace(request.Tag))
-            {
-                parameters["tag"] = request.Tag;
-            }
+        if (!string.IsNullOrWhiteSpace(request.Tag))
+        {
+            parameters["tag"] = request.Tag;
+        }
 
-            if (request.Layer.HasValue)
-            {
-                parameters["layer"] = request.Layer.Value;
-            }
+        if (request.Layer.HasValue)
+        {
+            parameters["layer"] = request.Layer.Value;
+        }
 
-            if (request.Active.HasValue)
-            {
-                parameters["active"] = request.Active.Value;
-            }
+        if (request.Active.HasValue)
+        {
+            parameters["active"] = request.Active.Value;
+        }
 
-            if (!string.IsNullOrWhiteSpace(request.PrimitiveType))
-            {
-                parameters["primitive_type"] = request.PrimitiveType;
-            }
+        if (!string.IsNullOrWhiteSpace(request.PrimitiveType))
+        {
+            parameters["primitive_type"] = request.PrimitiveType;
+        }
 
-            if (request.WorldPositionStays.HasValue)
-            {
-                parameters["world_position_stays"] = request.WorldPositionStays.Value;
-            }
+        if (request.WorldPositionStays.HasValue)
+        {
+            parameters["world_position_stays"] = request.WorldPositionStays.Value;
+        }
 
-            if (request.SiblingIndex.HasValue)
-            {
-                parameters["sibling_index"] = request.SiblingIndex.Value;
-            }
+        if (request.SiblingIndex.HasValue)
+        {
+            parameters["sibling_index"] = request.SiblingIndex.Value;
+        }
 
-            var payload = await ExecuteSyncToolAsync(ToolNames.ManageSceneGameObject, parameters, timeoutMs, token);
-            return new ManageSceneGameObjectResult(payload);
-        }, cancellationToken);
+        var payload = await ExecuteSyncToolAsync(ToolNames.ManageSceneGameObject, parameters, timeoutMs, cancellationToken);
+        return new ManageSceneGameObjectResult(payload);
     }
 
-    public Task<ManagePrefabGameObjectResult> ManagePrefabGameObjectAsync(ManagePrefabGameObjectRequest request, CancellationToken cancellationToken)
+    public async Task<ManagePrefabGameObjectResult> ManagePrefabGameObjectAsync(ManagePrefabGameObjectRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManagePrefabGameObject);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManagePrefabGameObject);
-            var parameters = new JsonObject
-            {
-                ["prefab_path"] = request.PrefabPath,
-                ["action"] = request.Action,
-            };
-            if (!string.IsNullOrWhiteSpace(request.GameObjectPath))
-            {
-                parameters["game_object_path"] = request.GameObjectPath;
-            }
+            ["prefab_path"] = request.PrefabPath,
+            ["action"] = request.Action,
+        };
+        if (!string.IsNullOrWhiteSpace(request.GameObjectPath))
+        {
+            parameters["game_object_path"] = request.GameObjectPath;
+        }
 
-            if (!string.IsNullOrWhiteSpace(request.ParentPath))
-            {
-                parameters["parent_path"] = request.ParentPath;
-            }
+        if (!string.IsNullOrWhiteSpace(request.ParentPath))
+        {
+            parameters["parent_path"] = request.ParentPath;
+        }
 
-            if (!string.IsNullOrWhiteSpace(request.Name))
-            {
-                parameters["name"] = request.Name;
-            }
+        if (!string.IsNullOrWhiteSpace(request.Name))
+        {
+            parameters["name"] = request.Name;
+        }
 
-            if (!string.IsNullOrWhiteSpace(request.Tag))
-            {
-                parameters["tag"] = request.Tag;
-            }
+        if (!string.IsNullOrWhiteSpace(request.Tag))
+        {
+            parameters["tag"] = request.Tag;
+        }
 
-            if (request.Layer.HasValue)
-            {
-                parameters["layer"] = request.Layer.Value;
-            }
+        if (request.Layer.HasValue)
+        {
+            parameters["layer"] = request.Layer.Value;
+        }
 
-            if (request.Active.HasValue)
-            {
-                parameters["active"] = request.Active.Value;
-            }
+        if (request.Active.HasValue)
+        {
+            parameters["active"] = request.Active.Value;
+        }
 
-            if (!string.IsNullOrWhiteSpace(request.PrimitiveType))
-            {
-                parameters["primitive_type"] = request.PrimitiveType;
-            }
+        if (!string.IsNullOrWhiteSpace(request.PrimitiveType))
+        {
+            parameters["primitive_type"] = request.PrimitiveType;
+        }
 
-            if (request.WorldPositionStays.HasValue)
-            {
-                parameters["world_position_stays"] = request.WorldPositionStays.Value;
-            }
+        if (request.WorldPositionStays.HasValue)
+        {
+            parameters["world_position_stays"] = request.WorldPositionStays.Value;
+        }
 
-            if (request.SiblingIndex.HasValue)
-            {
-                parameters["sibling_index"] = request.SiblingIndex.Value;
-            }
+        if (request.SiblingIndex.HasValue)
+        {
+            parameters["sibling_index"] = request.SiblingIndex.Value;
+        }
 
-            var payload = await ExecuteSyncToolAsync(ToolNames.ManagePrefabGameObject, parameters, timeoutMs, token);
-            return new ManagePrefabGameObjectResult(payload);
-        }, cancellationToken);
+        var payload = await ExecuteSyncToolAsync(ToolNames.ManagePrefabGameObject, parameters, timeoutMs, cancellationToken);
+        return new ManagePrefabGameObjectResult(payload);
     }
 
-    public Task<ListScenesResult> ListScenesAsync(ListScenesRequest request, CancellationToken cancellationToken)
+    public async Task<ListScenesResult> ListScenesAsync(ListScenesRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ListScenes);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ListScenes);
-            var parameters = new JsonObject
-            {
-                ["max_results"] = request.MaxResults,
-                ["offset"] = request.Offset,
-            };
-            if (request.NamePattern is not null)
-            {
-                parameters["name_pattern"] = request.NamePattern;
-            }
-            var payload = await ExecuteSyncToolAsync(ToolNames.ListScenes, parameters, timeoutMs, token);
-            return new ListScenesResult(payload);
-        }, cancellationToken);
+            ["max_results"] = request.MaxResults,
+            ["offset"] = request.Offset,
+        };
+        if (request.NamePattern is not null)
+        {
+            parameters["name_pattern"] = request.NamePattern;
+        }
+        var payload = await ExecuteSyncToolAsync(ToolNames.ListScenes, parameters, timeoutMs, cancellationToken);
+        return new ListScenesResult(payload);
     }
 
-    public Task<OpenSceneResult> OpenSceneAsync(OpenSceneRequest request, CancellationToken cancellationToken)
+    public async Task<OpenSceneResult> OpenSceneAsync(OpenSceneRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.OpenScene);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.OpenScene);
-            var parameters = new JsonObject
-            {
-                ["path"] = request.Path,
-                ["mode"] = request.Mode,
-            };
-            var payload = await ExecuteSyncToolAsync(ToolNames.OpenScene, parameters, timeoutMs, token);
-            return new OpenSceneResult(payload);
-        }, cancellationToken);
+            ["path"] = request.Path,
+            ["mode"] = request.Mode,
+        };
+        var payload = await ExecuteSyncToolAsync(ToolNames.OpenScene, parameters, timeoutMs, cancellationToken);
+        return new OpenSceneResult(payload);
     }
 
-    public Task<SaveSceneResult> SaveSceneAsync(SaveSceneRequest request, CancellationToken cancellationToken)
+    public async Task<SaveSceneResult> SaveSceneAsync(SaveSceneRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.SaveScene);
+        var parameters = new JsonObject();
+        if (!string.IsNullOrWhiteSpace(request.Path))
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.SaveScene);
-            var parameters = new JsonObject();
-            if (!string.IsNullOrWhiteSpace(request.Path))
-            {
-                parameters["path"] = request.Path;
-            }
+            parameters["path"] = request.Path;
+        }
 
-            var payload = await ExecuteSyncToolAsync(ToolNames.SaveScene, parameters, timeoutMs, token);
-            return new SaveSceneResult(payload);
-        }, cancellationToken);
+        var payload = await ExecuteSyncToolAsync(ToolNames.SaveScene, parameters, timeoutMs, cancellationToken);
+        return new SaveSceneResult(payload);
     }
 
-    public Task<CreateSceneResult> CreateSceneAsync(CreateSceneRequest request, CancellationToken cancellationToken)
+    public async Task<CreateSceneResult> CreateSceneAsync(CreateSceneRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.CreateScene);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.CreateScene);
-            var parameters = new JsonObject
-            {
-                ["path"] = request.Path,
-                ["setup"] = request.Setup,
-            };
-            var payload = await ExecuteSyncToolAsync(ToolNames.CreateScene, parameters, timeoutMs, token);
-            return new CreateSceneResult(payload);
-        }, cancellationToken);
+            ["path"] = request.Path,
+            ["setup"] = request.Setup,
+        };
+        var payload = await ExecuteSyncToolAsync(ToolNames.CreateScene, parameters, timeoutMs, cancellationToken);
+        return new CreateSceneResult(payload);
     }
 
-    public Task<FindAssetsResult> FindAssetsAsync(FindAssetsRequest request, CancellationToken cancellationToken)
+    public async Task<FindAssetsResult> FindAssetsAsync(FindAssetsRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.FindAssets);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.FindAssets);
-            var parameters = new JsonObject
+            ["filter"] = request.Filter,
+            ["max_results"] = request.MaxResults,
+            ["offset"] = request.Offset,
+        };
+        if (request.SearchInFolders is not null)
+        {
+            var foldersArray = new JsonArray();
+            foreach (var folder in request.SearchInFolders)
             {
-                ["filter"] = request.Filter,
-                ["max_results"] = request.MaxResults,
-                ["offset"] = request.Offset,
-            };
-            if (request.SearchInFolders is not null)
-            {
-                var foldersArray = new JsonArray();
-                foreach (var folder in request.SearchInFolders)
-                {
-                    foldersArray.Add(folder);
-                }
-
-                parameters["search_in_folders"] = foldersArray;
+                foldersArray.Add(folder);
             }
 
-            var payload = await ExecuteSyncToolAsync(ToolNames.FindAssets, parameters, timeoutMs, token);
-            return new FindAssetsResult(payload);
-        }, cancellationToken);
+            parameters["search_in_folders"] = foldersArray;
+        }
+
+        var payload = await ExecuteSyncToolAsync(ToolNames.FindAssets, parameters, timeoutMs, cancellationToken);
+        return new FindAssetsResult(payload);
     }
 
-    public Task<FindSceneGameObjectsResult> FindSceneGameObjectsAsync(FindSceneGameObjectsRequest request, CancellationToken cancellationToken)
+    public async Task<FindSceneGameObjectsResult> FindSceneGameObjectsAsync(FindSceneGameObjectsRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.FindSceneGameObjects);
+        var parameters = new JsonObject();
+        if (!string.IsNullOrWhiteSpace(request.Name))
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.FindSceneGameObjects);
-            var parameters = new JsonObject();
-            if (!string.IsNullOrWhiteSpace(request.Name))
+            parameters["name"] = request.Name;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Tag))
+        {
+            parameters["tag"] = request.Tag;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ComponentType))
+        {
+            parameters["component_type"] = request.ComponentType;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.RootPath))
+        {
+            parameters["root_path"] = request.RootPath;
+        }
+
+        if (request.Layer.HasValue)
+        {
+            parameters["layer"] = request.Layer.Value;
+        }
+
+        if (request.Active.HasValue)
+        {
+            parameters["active"] = request.Active.Value;
+        }
+
+        parameters["max_results"] = request.MaxResults;
+        parameters["offset"] = request.Offset;
+        var payload = await ExecuteSyncToolAsync(ToolNames.FindSceneGameObjects, parameters, timeoutMs, cancellationToken);
+        return new FindSceneGameObjectsResult(payload);
+    }
+
+    public async Task<InstantiatePrefabResult> InstantiatePrefabAsync(InstantiatePrefabRequest request, CancellationToken cancellationToken)
+    {
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.InstantiatePrefab);
+        var parameters = new JsonObject
+        {
+            ["prefab_path"] = request.PrefabPath,
+        };
+        if (!string.IsNullOrWhiteSpace(request.ParentPath))
+        {
+            parameters["parent_path"] = request.ParentPath;
+        }
+
+        if (request.Position is not null)
+        {
+            parameters["position"] = request.Position.DeepClone();
+        }
+
+        if (request.Rotation is not null)
+        {
+            parameters["rotation"] = request.Rotation.DeepClone();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Name))
+        {
+            parameters["name"] = request.Name;
+        }
+
+        if (request.SiblingIndex.HasValue)
+        {
+            parameters["sibling_index"] = request.SiblingIndex.Value;
+        }
+
+        var payload = await ExecuteSyncToolAsync(ToolNames.InstantiatePrefab, parameters, timeoutMs, cancellationToken);
+        return new InstantiatePrefabResult(payload);
+    }
+
+    public async Task<GetAssetInfoResult> GetAssetInfoAsync(GetAssetInfoRequest request, CancellationToken cancellationToken)
+    {
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetAssetInfo);
+        var parameters = new JsonObject
+        {
+            ["asset_path"] = request.AssetPath,
+        };
+        var payload = await ExecuteSyncToolAsync(ToolNames.GetAssetInfo, parameters, timeoutMs, cancellationToken);
+        return new GetAssetInfoResult(payload);
+    }
+
+    public async Task<FindPrefabGameObjectsResult> FindPrefabGameObjectsAsync(FindPrefabGameObjectsRequest request, CancellationToken cancellationToken)
+    {
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.FindPrefabGameObjects);
+        var parameters = new JsonObject
+        {
+            ["prefab_path"] = request.PrefabPath,
+        };
+        if (!string.IsNullOrWhiteSpace(request.Name))
+        {
+            parameters["name"] = request.Name;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Tag))
+        {
+            parameters["tag"] = request.Tag;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ComponentType))
+        {
+            parameters["component_type"] = request.ComponentType;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.RootPath))
+        {
+            parameters["root_path"] = request.RootPath;
+        }
+
+        if (request.Layer.HasValue)
+        {
+            parameters["layer"] = request.Layer.Value;
+        }
+
+        if (request.Active.HasValue)
+        {
+            parameters["active"] = request.Active.Value;
+        }
+
+        parameters["max_results"] = request.MaxResults;
+        parameters["offset"] = request.Offset;
+        var payload = await ExecuteSyncToolAsync(ToolNames.FindPrefabGameObjects, parameters, timeoutMs, cancellationToken);
+        return new FindPrefabGameObjectsResult(payload);
+    }
+
+    public async Task<ManageAssetResult> ManageAssetAsync(ManageAssetRequest request, CancellationToken cancellationToken)
+    {
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageAsset);
+        var parameters = new JsonObject
+        {
+            ["action"] = request.Action,
+            ["asset_path"] = request.AssetPath,
+        };
+        if (!string.IsNullOrWhiteSpace(request.AssetType))
+        {
+            parameters["asset_type"] = request.AssetType;
+        }
+
+        if (request.Properties is not null)
+        {
+            parameters["properties"] = request.Properties.DeepClone();
+        }
+
+        if (request.Overwrite)
+        {
+            parameters["overwrite"] = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ShaderName))
+        {
+            parameters["shader_name"] = request.ShaderName;
+        }
+
+        if (request.Keywords is { Length: > 0 })
+        {
+            var arr = new JsonArray();
+            foreach (var kw in request.Keywords)
             {
-                parameters["name"] = request.Name;
+                arr.Add(kw);
             }
 
-            if (!string.IsNullOrWhiteSpace(request.Tag))
-            {
-                parameters["tag"] = request.Tag;
-            }
+            parameters["keywords"] = arr;
+        }
 
-            if (!string.IsNullOrWhiteSpace(request.ComponentType))
-            {
-                parameters["component_type"] = request.ComponentType;
-            }
+        if (!string.IsNullOrWhiteSpace(request.KeywordsAction))
+        {
+            parameters["keywords_action"] = request.KeywordsAction;
+        }
 
-            if (!string.IsNullOrWhiteSpace(request.RootPath))
-            {
-                parameters["root_path"] = request.RootPath;
-            }
+        var payload = await ExecuteSyncToolAsync(ToolNames.ManageAsset, parameters, timeoutMs, cancellationToken);
+        return new ManageAssetResult(payload);
+    }
 
-            if (request.Layer.HasValue)
-            {
-                parameters["layer"] = request.Layer.Value;
-            }
+    public async Task<ManageAsmdefResult> ManageAsmdefAsync(ManageAsmdefRequest request, CancellationToken cancellationToken)
+    {
+        var isMutation = request.Action is not (ManageAsmdefActions.List or ManageAsmdefActions.Get);
 
-            if (request.Active.HasValue)
-            {
-                parameters["active"] = request.Active.Value;
-            }
+        await EnsureEditorReadyAsync(cancellationToken);
 
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageAsmdef);
+        var parameters = new JsonObject
+        {
+            ["action"] = request.Action,
+        };
+
+        if (!string.IsNullOrWhiteSpace(request.Name))
+            parameters["name"] = request.Name;
+        if (!string.IsNullOrWhiteSpace(request.Guid))
+            parameters["guid"] = request.Guid;
+        if (!string.IsNullOrWhiteSpace(request.Directory))
+            parameters["directory"] = request.Directory;
+        if (request.RootNamespace is not null)
+            parameters["root_namespace"] = request.RootNamespace;
+        if (request.References is { Length: > 0 })
+        {
+            var arr = new JsonArray();
+            foreach (var r in request.References) arr.Add(r);
+            parameters["references"] = arr;
+        }
+        if (request.UseGuids.HasValue)
+            parameters["use_guids"] = request.UseGuids.Value;
+        if (request.IncludePlatforms is { Length: > 0 })
+        {
+            var arr = new JsonArray();
+            foreach (var p in request.IncludePlatforms) arr.Add(p);
+            parameters["include_platforms"] = arr;
+        }
+        if (request.ExcludePlatforms is { Length: > 0 })
+        {
+            var arr = new JsonArray();
+            foreach (var p in request.ExcludePlatforms) arr.Add(p);
+            parameters["exclude_platforms"] = arr;
+        }
+        if (request.AllowUnsafeCode.HasValue)
+            parameters["allow_unsafe_code"] = request.AllowUnsafeCode.Value;
+        if (request.AutoReferenced.HasValue)
+            parameters["auto_referenced"] = request.AutoReferenced.Value;
+        if (request.DefineConstraints is { Length: > 0 })
+        {
+            var arr = new JsonArray();
+            foreach (var d in request.DefineConstraints) arr.Add(d);
+            parameters["define_constraints"] = arr;
+        }
+        if (request.NoEngineReferences.HasValue)
+            parameters["no_engine_references"] = request.NoEngineReferences.Value;
+        if (!string.IsNullOrWhiteSpace(request.Reference))
+            parameters["reference"] = request.Reference;
+        if (!string.IsNullOrWhiteSpace(request.ReferenceGuid))
+            parameters["reference_guid"] = request.ReferenceGuid;
+        if (!string.IsNullOrWhiteSpace(request.NamePattern))
+            parameters["name_pattern"] = request.NamePattern;
+        if (request.MaxResults != ManageAsmdefLimits.MaxResultsDefault)
             parameters["max_results"] = request.MaxResults;
+        if (request.Offset > 0)
             parameters["offset"] = request.Offset;
-            var payload = await ExecuteSyncToolAsync(ToolNames.FindSceneGameObjects, parameters, timeoutMs, token);
-            return new FindSceneGameObjectsResult(payload);
-        }, cancellationToken);
-    }
 
-    public Task<InstantiatePrefabResult> InstantiatePrefabAsync(InstantiatePrefabRequest request, CancellationToken cancellationToken)
-    {
-        return _scheduler.EnqueueAsync(async token =>
+        // list/get は single-shot（ロックなし）
+        if (!isMutation)
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.InstantiatePrefab);
-            var parameters = new JsonObject
-            {
-                ["prefab_path"] = request.PrefabPath,
-            };
-            if (!string.IsNullOrWhiteSpace(request.ParentPath))
-            {
-                parameters["parent_path"] = request.ParentPath;
-            }
-
-            if (request.Position is not null)
-            {
-                parameters["position"] = request.Position.DeepClone();
-            }
-
-            if (request.Rotation is not null)
-            {
-                parameters["rotation"] = request.Rotation.DeepClone();
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.Name))
-            {
-                parameters["name"] = request.Name;
-            }
-
-            if (request.SiblingIndex.HasValue)
-            {
-                parameters["sibling_index"] = request.SiblingIndex.Value;
-            }
-
-            var payload = await ExecuteSyncToolAsync(ToolNames.InstantiatePrefab, parameters, timeoutMs, token);
-            return new InstantiatePrefabResult(payload);
-        }, cancellationToken);
-    }
-
-    public Task<GetAssetInfoResult> GetAssetInfoAsync(GetAssetInfoRequest request, CancellationToken cancellationToken)
-    {
-        return _scheduler.EnqueueAsync(async token =>
-        {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetAssetInfo);
-            var parameters = new JsonObject
-            {
-                ["asset_path"] = request.AssetPath,
-            };
-            var payload = await ExecuteSyncToolAsync(ToolNames.GetAssetInfo, parameters, timeoutMs, token);
-            return new GetAssetInfoResult(payload);
-        }, cancellationToken);
-    }
-
-    public Task<FindPrefabGameObjectsResult> FindPrefabGameObjectsAsync(FindPrefabGameObjectsRequest request, CancellationToken cancellationToken)
-    {
-        return _scheduler.EnqueueAsync(async token =>
-        {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.FindPrefabGameObjects);
-            var parameters = new JsonObject
-            {
-                ["prefab_path"] = request.PrefabPath,
-            };
-            if (!string.IsNullOrWhiteSpace(request.Name))
-            {
-                parameters["name"] = request.Name;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.Tag))
-            {
-                parameters["tag"] = request.Tag;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.ComponentType))
-            {
-                parameters["component_type"] = request.ComponentType;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.RootPath))
-            {
-                parameters["root_path"] = request.RootPath;
-            }
-
-            if (request.Layer.HasValue)
-            {
-                parameters["layer"] = request.Layer.Value;
-            }
-
-            if (request.Active.HasValue)
-            {
-                parameters["active"] = request.Active.Value;
-            }
-
-            parameters["max_results"] = request.MaxResults;
-            parameters["offset"] = request.Offset;
-            var payload = await ExecuteSyncToolAsync(ToolNames.FindPrefabGameObjects, parameters, timeoutMs, token);
-            return new FindPrefabGameObjectsResult(payload);
-        }, cancellationToken);
-    }
-
-    public Task<ManageAssetResult> ManageAssetAsync(ManageAssetRequest request, CancellationToken cancellationToken)
-    {
-        return _scheduler.EnqueueAsync(async token =>
-        {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageAsset);
-            var parameters = new JsonObject
-            {
-                ["action"] = request.Action,
-                ["asset_path"] = request.AssetPath,
-            };
-            if (!string.IsNullOrWhiteSpace(request.AssetType))
-            {
-                parameters["asset_type"] = request.AssetType;
-            }
-
-            if (request.Properties is not null)
-            {
-                parameters["properties"] = request.Properties.DeepClone();
-            }
-
-            if (request.Overwrite)
-            {
-                parameters["overwrite"] = true;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.ShaderName))
-            {
-                parameters["shader_name"] = request.ShaderName;
-            }
-
-            if (request.Keywords is { Length: > 0 })
-            {
-                var arr = new JsonArray();
-                foreach (var kw in request.Keywords)
-                {
-                    arr.Add(kw);
-                }
-
-                parameters["keywords"] = arr;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.KeywordsAction))
-            {
-                parameters["keywords_action"] = request.KeywordsAction;
-            }
-
-            var payload = await ExecuteSyncToolAsync(ToolNames.ManageAsset, parameters, timeoutMs, token);
-            return new ManageAssetResult(payload);
-        }, cancellationToken);
-    }
-
-    public Task<ManageAsmdefResult> ManageAsmdefAsync(ManageAsmdefRequest request, CancellationToken cancellationToken)
-    {
-        return _scheduler.EnqueueAsync(async token =>
-        {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageAsmdef);
-            var parameters = new JsonObject
-            {
-                ["action"] = request.Action,
-            };
-
-            if (!string.IsNullOrWhiteSpace(request.Name))
-            {
-                parameters["name"] = request.Name;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.Guid))
-            {
-                parameters["guid"] = request.Guid;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.Directory))
-            {
-                parameters["directory"] = request.Directory;
-            }
-
-            if (request.RootNamespace is not null)
-            {
-                parameters["root_namespace"] = request.RootNamespace;
-            }
-
-            if (request.References is { Length: > 0 })
-            {
-                var arr = new JsonArray();
-                foreach (var r in request.References)
-                {
-                    arr.Add(r);
-                }
-
-                parameters["references"] = arr;
-            }
-
-            if (request.UseGuids.HasValue)
-            {
-                parameters["use_guids"] = request.UseGuids.Value;
-            }
-
-            if (request.IncludePlatforms is { Length: > 0 })
-            {
-                var arr = new JsonArray();
-                foreach (var p in request.IncludePlatforms)
-                {
-                    arr.Add(p);
-                }
-
-                parameters["include_platforms"] = arr;
-            }
-
-            if (request.ExcludePlatforms is { Length: > 0 })
-            {
-                var arr = new JsonArray();
-                foreach (var p in request.ExcludePlatforms)
-                {
-                    arr.Add(p);
-                }
-
-                parameters["exclude_platforms"] = arr;
-            }
-
-            if (request.AllowUnsafeCode.HasValue)
-            {
-                parameters["allow_unsafe_code"] = request.AllowUnsafeCode.Value;
-            }
-
-            if (request.AutoReferenced.HasValue)
-            {
-                parameters["auto_referenced"] = request.AutoReferenced.Value;
-            }
-
-            if (request.DefineConstraints is { Length: > 0 })
-            {
-                var arr = new JsonArray();
-                foreach (var d in request.DefineConstraints)
-                {
-                    arr.Add(d);
-                }
-
-                parameters["define_constraints"] = arr;
-            }
-
-            if (request.NoEngineReferences.HasValue)
-            {
-                parameters["no_engine_references"] = request.NoEngineReferences.Value;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.Reference))
-            {
-                parameters["reference"] = request.Reference;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.ReferenceGuid))
-            {
-                parameters["reference_guid"] = request.ReferenceGuid;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.NamePattern))
-            {
-                parameters["name_pattern"] = request.NamePattern;
-            }
-
-            if (request.MaxResults != ManageAsmdefLimits.MaxResultsDefault)
-            {
-                parameters["max_results"] = request.MaxResults;
-            }
-
-            if (request.Offset > 0)
-            {
-                parameters["offset"] = request.Offset;
-            }
-
-            var isMutation = request.Action is not (ManageAsmdefActions.List or ManageAsmdefActions.Get);
-
-            if (isMutation)
-            {
-                JsonNode payload;
-                try
-                {
-                    payload = await ExecuteSyncToolAsync(ToolNames.ManageAsmdef, parameters, timeoutMs, token);
-                }
-                catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
-                {
-                    await EnsureEditorReadyAsync(token);
-                    payload = new JsonObject { ["action"] = request.Action };
-                }
-
-                await WaitForCompilationAsync(payload, token);
-                return new ManageAsmdefResult(payload);
-            }
-
-            var readPayload = await ExecuteSyncToolAsync(ToolNames.ManageAsmdef, parameters, timeoutMs, token);
+            var readPayload = await ExecuteSyncToolAsync(ToolNames.ManageAsmdef, parameters, timeoutMs, cancellationToken);
             return new ManageAsmdefResult(readPayload);
-        }, cancellationToken);
+        }
+
+        // mutation（create/update/delete/add_reference/remove_reference）は workflow ロック
+        await _workflowLock.WaitAsync(cancellationToken);
+        try
+        {
+            await EnsureEditorReadyAsync(cancellationToken);
+
+            JsonNode payload;
+            try
+            {
+                payload = await ExecuteSyncToolAsync(ToolNames.ManageAsmdef, parameters, timeoutMs, cancellationToken);
+            }
+            catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+            {
+                await EnsureEditorReadyAsync(cancellationToken);
+                payload = new JsonObject { ["action"] = request.Action };
+            }
+
+            await WaitForCompilationAsync(payload, cancellationToken);
+            return new ManageAsmdefResult(payload);
+        }
+        finally
+        {
+            _workflowLock.Release();
+        }
     }
 
-    public Task<ManagePrefabResult> ManagePrefabAsync(ManagePrefabRequest request, CancellationToken cancellationToken)
+    public async Task<ManagePrefabResult> ManagePrefabAsync(ManagePrefabRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManagePrefab);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManagePrefab);
-            var parameters = new JsonObject
-            {
-                ["action"] = request.Action,
-            };
+            ["action"] = request.Action,
+        };
 
-            if (!string.IsNullOrWhiteSpace(request.GameObjectPath))
-            {
-                parameters["game_object_path"] = request.GameObjectPath;
-            }
+        if (!string.IsNullOrWhiteSpace(request.GameObjectPath))
+        {
+            parameters["game_object_path"] = request.GameObjectPath;
+        }
 
-            if (!string.IsNullOrWhiteSpace(request.PrefabPath))
-            {
-                parameters["prefab_path"] = request.PrefabPath;
-            }
+        if (!string.IsNullOrWhiteSpace(request.PrefabPath))
+        {
+            parameters["prefab_path"] = request.PrefabPath;
+        }
 
-            if (request.Connect.HasValue)
-            {
-                parameters["connect"] = request.Connect.Value;
-            }
+        if (request.Connect.HasValue)
+        {
+            parameters["connect"] = request.Connect.Value;
+        }
 
-            if (request.Completely.HasValue)
-            {
-                parameters["completely"] = request.Completely.Value;
-            }
+        if (request.Completely.HasValue)
+        {
+            parameters["completely"] = request.Completely.Value;
+        }
 
-            var payload = await ExecuteSyncToolAsync(ToolNames.ManagePrefab, parameters, timeoutMs, token);
-            return new ManagePrefabResult(payload);
-        }, cancellationToken);
+        var payload = await ExecuteSyncToolAsync(ToolNames.ManagePrefab, parameters, timeoutMs, cancellationToken);
+        return new ManagePrefabResult(payload);
     }
 
-    public Task<ManageBuildResult> ManageBuildAsync(ManageBuildRequest request, CancellationToken cancellationToken)
+    public async Task<ManageBuildResult> ManageBuildAsync(ManageBuildRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageBuild);
+        var parameters = BuildManageBuildParameters(request);
+
+        var isReadOnly = request.Action is ManageBuildActions.GetPlatform
+            or ManageBuildActions.GetSettings or ManageBuildActions.GetScenes
+            or ManageBuildActions.ListProfiles or ManageBuildActions.GetActiveProfile
+            or ManageBuildActions.BuildReport or ManageBuildActions.Validate;
+
+        // read-only アクションは single-shot（ロックなし）
+        if (isReadOnly)
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManageBuild);
-            var parameters = BuildManageBuildParameters(request);
+            var readPayload = await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, cancellationToken);
+            return new ManageBuildResult(readPayload);
+        }
 
-            var isReadOnly = request.Action is ManageBuildActions.GetPlatform
-                or ManageBuildActions.GetSettings or ManageBuildActions.GetScenes
-                or ManageBuildActions.ListProfiles or ManageBuildActions.GetActiveProfile
-                or ManageBuildActions.BuildReport or ManageBuildActions.Validate;
+        await _workflowLock.WaitAsync(cancellationToken);
+        try
+        {
+            await EnsureEditorReadyAsync(cancellationToken);
 
-            if (isReadOnly)
-            {
-                var readPayload = await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, token);
-                return new ManageBuildResult(readPayload);
-            }
-
-            // build アクション: fire-and-forget + ポーリング（RunTestsAsync と同パターン）
             if (request.Action == ManageBuildActions.Build)
             {
-                await EnsureEditModeAsync(token);
+                await EnsureEditModeAsync(cancellationToken);
+                await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, cancellationToken);
 
-                // ビルド開始
-                await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, token);
-
-                // ポーリングで完了を待機
                 var editorStateTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetEditorState);
                 var buildDeadline = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
                 while (DateTimeOffset.UtcNow < buildDeadline)
                 {
-                    token.ThrowIfCancellationRequested();
-                    await Task.Delay(2000, token);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await Task.Delay(2000, cancellationToken);
 
                     var pollPayload = await ExecuteSyncToolAsync(
-                        ToolNames.ManageBuild, new JsonObject(), editorStateTimeoutMs, token);
+                        ToolNames.ManageBuild, new JsonObject(), editorStateTimeoutMs, cancellationToken);
 
-                    // ビルド完了判定: "result" フィールドの有無で判断する。
-                    // 実行中レスポンス { "status": "building" } には "result" がなく、
-                    // 完了レスポンス（成功/失敗いずれも）には "result" が含まれる。
                     if (pollPayload is JsonObject pollObj && pollObj.ContainsKey("result"))
                     {
                         return new ManageBuildResult(pollPayload);
@@ -1239,14 +1131,13 @@ internal sealed class UnityBridge
                 throw new McpException(ErrorCodes.RequestTimeout, "Build execution timed out");
             }
 
-            // switch_platform: ドメインリロードを伴う可能性がある
             if (request.Action == ManageBuildActions.SwitchPlatform)
             {
-                await EnsureEditModeAsync(token);
+                await EnsureEditModeAsync(cancellationToken);
 
                 try
                 {
-                    var switchPayload = await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, token);
+                    var switchPayload = await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, cancellationToken);
                     return new ManageBuildResult(switchPayload);
                 }
                 catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
@@ -1254,33 +1145,36 @@ internal sealed class UnityBridge
                     // プラットフォーム切替によるドメインリロード。想定内。
                 }
 
-                await EnsureEditorReadyAsync(token);
+                await EnsureEditorReadyAsync(cancellationToken);
 
-                // 切替後の状態を get_platform で確認
                 var confirmParams = new JsonObject { ["action"] = ManageBuildActions.GetPlatform };
                 var confirmPayload = await ExecuteSyncToolAsync(
                     ToolNames.ManageBuild, confirmParams,
-                    ToolCatalog.DefaultTimeoutMs(ToolNames.GetEditorState), token);
+                    ToolCatalog.DefaultTimeoutMs(ToolNames.GetEditorState), cancellationToken);
                 return new ManageBuildResult(confirmPayload);
             }
 
             // set_settings / set_scenes / set_active_profile: コンパイルを伴う可能性がある
-            await EnsureEditModeAsync(token);
+            await EnsureEditModeAsync(cancellationToken);
 
             JsonNode mutPayload;
             try
             {
-                mutPayload = await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, token);
+                mutPayload = await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, cancellationToken);
             }
             catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
             {
-                await EnsureEditorReadyAsync(token);
+                await EnsureEditorReadyAsync(cancellationToken);
                 mutPayload = new JsonObject { ["action"] = request.Action };
             }
 
-            await WaitForCompilationAsync(mutPayload, token);
+            await WaitForCompilationAsync(mutPayload, cancellationToken);
             return new ManageBuildResult(mutPayload);
-        }, cancellationToken);
+        }
+        finally
+        {
+            _workflowLock.Release();
+        }
     }
 
     private static JsonObject BuildManageBuildParameters(ManageBuildRequest request)
@@ -1359,7 +1253,7 @@ internal sealed class UnityBridge
     /// <summary>
     /// get_editor_state をポーリングし、コンパイル/リロード完了を待機する。
     /// 完了後にエラーがあれば payload に追加する。
-    /// スケジューラ内部から呼び出す前提。
+    /// workflow ロック内から呼び出す前提。
     /// </summary>
     private async Task WaitForCompilationAsync(JsonNode payload, CancellationToken token)
     {
@@ -1402,7 +1296,7 @@ internal sealed class UnityBridge
     /// <summary>
     /// コンソールにエラーがあれば payload に errors フィールドを追加する。
     /// コンパイルエラー、アセットインポートエラー等を含む。
-    /// スケジューラ内部から呼び出す前提（EnsureEditorReadyAsync 済み）。
+    /// EnsureEditorReadyAsync 済みであることを前提とする。
     /// </summary>
     private async Task AppendErrorsIfAny(JsonNode payload, CancellationToken token)
     {
@@ -1436,7 +1330,7 @@ internal sealed class UnityBridge
     /// <summary>
     /// コンパイルエラーがあれば McpException をスローする。
     /// Play Mode 開始前など、コンパイルが通っていることが前提条件となる操作の事前チェックに使う。
-    /// スケジューラ内部から呼び出す前提（EnsureEditorReadyAsync 済み）。
+    /// EnsureEditorReadyAsync 済みであることを前提とする。
     /// </summary>
     private async Task ThrowIfCompileErrorsAsync(CancellationToken token)
     {
@@ -1460,58 +1354,55 @@ internal sealed class UnityBridge
         }
     }
 
-    public Task<CaptureScreenshotResult> CaptureScreenshotAsync(CaptureScreenshotRequest request, CancellationToken cancellationToken)
+    public async Task<CaptureScreenshotResult> CaptureScreenshotAsync(CaptureScreenshotRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.CaptureScreenshot);
+        var parameters = new JsonObject
         {
-            await EnsureEditorReadyAsync(token);
-            var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.CaptureScreenshot);
-            var parameters = new JsonObject
-            {
-                ["source"] = request.Source,
-                ["width"] = request.Width,
-                ["height"] = request.Height,
-            };
-            if (!string.IsNullOrWhiteSpace(request.CameraPath))
-            {
-                parameters["camera_path"] = request.CameraPath;
-            }
+            ["source"] = request.Source,
+            ["width"] = request.Width,
+            ["height"] = request.Height,
+        };
+        if (!string.IsNullOrWhiteSpace(request.CameraPath))
+        {
+            parameters["camera_path"] = request.CameraPath;
+        }
 
-            if (!string.IsNullOrWhiteSpace(request.OutputPath))
-            {
-                parameters["output_path"] = request.OutputPath;
-            }
+        if (!string.IsNullOrWhiteSpace(request.OutputPath))
+        {
+            parameters["output_path"] = request.OutputPath;
+        }
 
-            var payload = await ExecuteSyncToolAsync(ToolNames.CaptureScreenshot, parameters, timeoutMs, token);
-            return new CaptureScreenshotResult(payload);
-        }, cancellationToken);
+        var payload = await ExecuteSyncToolAsync(ToolNames.CaptureScreenshot, parameters, timeoutMs, cancellationToken);
+        return new CaptureScreenshotResult(payload);
     }
 
-    public Task<RunTestsResult> RunTestsAsync(RunTestsRequest request, CancellationToken cancellationToken)
+    public async Task<RunTestsResult> RunTestsAsync(RunTestsRequest request, CancellationToken cancellationToken)
     {
-        return _scheduler.EnqueueAsync(async token =>
-        {
-            // App Nap による遅延を防ぐため、操作前に Editor を前面に出す
-            await using var focusScope = await EditorFocusScope.ActivateAsync(
-                _runtimeState.GetEditorPid());
+        // App Nap による遅延を防ぐため、操作前に Editor を前面に出す
+        await using var focusScope = await EditorFocusScope.ActivateAsync(
+            _runtimeState.GetEditorPid());
 
-            await EnsureEditorReadyAsync(token);
+        await EnsureEditorReadyAsync(cancellationToken);
+        await _workflowLock.WaitAsync(cancellationToken);
+        try
+        {
+            await EnsureEditorReadyAsync(cancellationToken);
 
             // アセットをリフレッシュし、コンパイル完了を待機する。
-            // テストコード変更後に refresh なしで run_tests した場合に古いアセンブリで実行される問題、
-            // およびコンパイルエラーを検知できない問題を防ぐ。
-            await EnsureEditModeAsync(token);
+            await EnsureEditModeAsync(cancellationToken);
 
             var refreshTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RefreshAssets);
             JsonNode refreshPayload;
             try
             {
                 refreshPayload = await ExecuteSyncToolAsync(
-                    ToolNames.RefreshAssets, new JsonObject(), refreshTimeoutMs, token);
+                    ToolNames.RefreshAssets, new JsonObject(), refreshTimeoutMs, cancellationToken);
             }
             catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
             {
-                await EnsureEditorReadyAsync(token);
+                await EnsureEditorReadyAsync(cancellationToken);
                 refreshPayload = new JsonObject { ["refreshed"] = true, ["compiling"] = true };
             }
 
@@ -1528,15 +1419,15 @@ internal sealed class UnityBridge
 
                 if (compiling)
                 {
-                    await WaitForCompilationAsync(refreshPayload, token);
+                    await WaitForCompilationAsync(refreshPayload, cancellationToken);
                 }
                 else if (compilationFailed)
                 {
-                    await AppendErrorsIfAny(refreshPayload, token);
+                    await AppendErrorsIfAny(refreshPayload, cancellationToken);
                 }
                 else
                 {
-                    await CheckForDelayedCompilationAsync(refreshPayload, token);
+                    await CheckForDelayedCompilationAsync(refreshPayload, cancellationToken);
                 }
             }
 
@@ -1554,22 +1445,19 @@ internal sealed class UnityBridge
             // テスト開始（Plugin は即座に応答し、バックグラウンドでテストを実行する）
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RunTests);
             var parameters = BuildRunTestsParameters(request);
-            await ExecuteSyncToolAsync(ToolNames.RunTests, parameters, timeoutMs, token);
+            await ExecuteSyncToolAsync(ToolNames.RunTests, parameters, timeoutMs, cancellationToken);
 
             // テスト完了をポーリングで待機。
-            // Plugin の run_tests を呼び出し、結果が返るまで繰り返す。
-            // 実行中は { "status": "running" }、完了後は実テスト結果が返る。
             var editorStateTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetEditorState);
             var testDeadline = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
             while (DateTimeOffset.UtcNow < testDeadline)
             {
-                token.ThrowIfCancellationRequested();
-                await Task.Delay(1000, token);
+                cancellationToken.ThrowIfCancellationRequested();
+                await Task.Delay(1000, cancellationToken);
 
                 var pollPayload = await ExecuteSyncToolAsync(
-                    ToolNames.RunTests, new JsonObject(), editorStateTimeoutMs, token);
+                    ToolNames.RunTests, new JsonObject(), editorStateTimeoutMs, cancellationToken);
 
-                // 実テスト結果には "summary" フィールドがある。"status" のみの場合はまだ実行中。
                 if (pollPayload is JsonObject pollObj && pollObj.ContainsKey("summary"))
                 {
                     return new RunTestsResult(pollPayload);
@@ -1579,7 +1467,11 @@ internal sealed class UnityBridge
             }
 
             throw new McpException(ErrorCodes.RequestTimeout, "Test execution timed out");
-        }, cancellationToken);
+        }
+        finally
+        {
+            _workflowLock.Release();
+        }
     }
 
     private static JsonObject BuildEmptyRunTestsPayload(RunTestsRequest request)
@@ -2153,16 +2045,24 @@ internal sealed class UnityBridge
         _logger.ZLogWarning($"Rejected Unity websocket session because another editor is active editor_instance_id={editorInstanceId} plugin_session_id={pluginSessionId} connect_attempt_seq={connectAttemptSeq} suppressed={sup} throttle_sec={throttleSec}");
     }
 
-    private static async Task SendRawAsync(WebSocket socket, JsonObject payload, CancellationToken cancellationToken)
+    private async Task SendRawAsync(WebSocket socket, JsonObject payload, CancellationToken cancellationToken)
     {
-        if (socket.State != WebSocketState.Open)
+        await _sendLock.WaitAsync(cancellationToken);
+        try
         {
-            throw new McpException(ErrorCodes.UnityDisconnected, "Unity websocket is not connected");
-        }
+            if (socket.State != WebSocketState.Open)
+            {
+                throw new McpException(ErrorCodes.UnityDisconnected, "Unity websocket is not connected");
+            }
 
-        var json = payload.ToJsonString(JsonDefaults.Options);
-        var bytes = Encoding.UTF8.GetBytes(json);
-        await socket.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken);
+            var json = payload.ToJsonString(JsonDefaults.Options);
+            var bytes = Encoding.UTF8.GetBytes(json);
+            await socket.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken);
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
     }
 
     private static async Task SafeCloseSocketAsync(

@@ -1082,8 +1082,7 @@ public sealed class McpToolServiceTests
 
     private static McpToolService CreateService(RuntimeState runtimeState)
     {
-        var scheduler = new RequestScheduler(Constants.QueueMaxSize);
-        var bridge = new UnityBridge(runtimeState, scheduler, NullLogger<UnityBridge>.Instance);
+        var bridge = new UnityBridge(runtimeState, NullLogger<UnityBridge>.Instance);
         return new McpToolService(runtimeState, bridge, NullLogger<McpToolService>.Instance);
     }
 }

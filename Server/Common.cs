@@ -14,7 +14,7 @@ internal static class Constants
     public const string McpHttpPath = "/mcp";
     public const string UnityWsPath = "/unity";
     public const int ProtocolVersion = 1;
-    public const int QueueMaxSize = 32;
+
     public const int MaxMessageBytes = 1024 * 1024;
     public const int StaleConnectionTimeoutMs = 15_000;
     public const int EditorStatusIntervalMs = 5_000;
@@ -35,7 +35,7 @@ internal static class ErrorCodes
     public const string UnityDisconnected = "ERR_UNITY_DISCONNECTED";
     public const string ReconnectTimeout = "ERR_RECONNECT_TIMEOUT";
     public const string RequestTimeout = "ERR_REQUEST_TIMEOUT";
-    public const string QueueFull = "ERR_QUEUE_FULL";
+
     public const string UnityExecution = "ERR_UNITY_EXECUTION";
     public const string InvalidResponse = "ERR_INVALID_RESPONSE";
     public const string CompileErrors = "ERR_COMPILE_ERRORS";

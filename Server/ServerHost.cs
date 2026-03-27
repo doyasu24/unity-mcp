@@ -67,7 +67,6 @@ internal static class ServerHost
         var config = new ServerConfig(port);
         builder.Services.AddSingleton(config);
         builder.Services.AddSingleton<RuntimeState>();
-        builder.Services.AddSingleton(_ => new RequestScheduler(Constants.QueueMaxSize));
         builder.Services.AddSingleton<UnityBridge>();
         builder.Services.AddSingleton<McpToolService>();
         builder.Services.AddSingleton<McpHttpHandler>();
