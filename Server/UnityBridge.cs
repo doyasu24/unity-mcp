@@ -256,8 +256,18 @@ internal sealed class UnityBridge
     private async Task<bool> EnsureEditModeAsync(CancellationToken token)
     {
         var getStateTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetPlayModeState);
-        var statePayload = await ExecuteSyncToolAsync(
-            ToolNames.GetPlayModeState, new JsonObject(), getStateTimeoutMs, token);
+        JsonNode statePayload;
+        try
+        {
+            statePayload = await ExecuteSyncToolAsync(
+                ToolNames.GetPlayModeState, new JsonObject(), getStateTimeoutMs, token);
+        }
+        catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+        {
+            // domain reload による切断。リロード後は常に Edit モードになるため false を返す。
+            await EnsureEditorReadyAsync(token);
+            return false;
+        }
 
         // is_playing が true なら paused 含め Play 中。
         // EnsureEditorReadyAsync が先に呼ばれているため、遷移中 (EnteringPlayMode 等) はここに到達しない。
@@ -1482,7 +1492,16 @@ internal sealed class UnityBridge
             // テスト開始（Plugin は即座に応答し、バックグラウンドでテストを実行する）
             var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RunTests);
             var parameters = BuildRunTestsParameters(request);
-            await ExecuteSyncToolAsync(ToolNames.RunTests, parameters, timeoutMs, cancellationToken);
+            try
+            {
+                await ExecuteSyncToolAsync(ToolNames.RunTests, parameters, timeoutMs, cancellationToken);
+            }
+            catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+            {
+                // ReconnectTimeout は AfterSend 後の切断でも発生するため、テストが既に開始済みの可能性がある。
+                // リトライは二重実行のリスクがあるため行わず、再接続を待ってポーリングで状況を確認する。
+                await EnsureEditorReadyAsync(cancellationToken);
+            }
 
             // テスト完了をポーリングで待機。
             var editorStateTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetEditorState);
@@ -1492,8 +1511,18 @@ internal sealed class UnityBridge
                 cancellationToken.ThrowIfCancellationRequested();
                 await Task.Delay(1000, cancellationToken);
 
-                var pollPayload = await ExecuteSyncToolAsync(
-                    ToolNames.RunTests, new JsonObject(), editorStateTimeoutMs, cancellationToken);
+                JsonNode pollPayload;
+                try
+                {
+                    pollPayload = await ExecuteSyncToolAsync(
+                        ToolNames.RunTests, new JsonObject(), editorStateTimeoutMs, cancellationToken);
+                }
+                catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+                {
+                    // 切断中はポーリングをスキップして次のイテレーションへ
+                    await EnsureEditorReadyAsync(cancellationToken);
+                    continue;
+                }
 
                 if (pollPayload is JsonObject pollObj && pollObj.ContainsKey("summary"))
                 {
