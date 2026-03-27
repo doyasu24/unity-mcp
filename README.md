@@ -66,7 +66,7 @@ For `get_hierarchy`, when `offset > 0` the response returns a flat `game_objects
 2. Set up a project-local `dotnet tool` version (pinned per project):
    ```bash
    dotnet new tool-manifest
-   dotnet tool install --local Doyasu24.UnityMcp.Tool --version 0.1.2
+   dotnet tool install --local Doyasu24.UnityMcp.Tool --version 0.1.3
    ```
 3. Start the Unity MCP server (default port: `48091`):
    ```bash
@@ -83,7 +83,7 @@ For `get_hierarchy`, when `offset > 0` the response returns a flat `game_objects
 
 Add to Package Manager:
 
-`https://github.com/doyasu24/unity-mcp.git?path=UnityMCPPlugin/Assets/Plugins/UnityMCP#v0.1.2`
+`https://github.com/doyasu24/unity-mcp.git?path=UnityMCPPlugin/Assets/Plugins/UnityMCP#v0.1.3`
 
 ### Claude Code Setup
 
