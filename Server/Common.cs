@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -8,7 +9,15 @@ internal sealed record ServerConfig(int Port);
 internal static class Constants
 {
     public const string ServerName = "unity-mcp";
-    public const string ServerVersion = "0.1.0";
+
+    /// <summary>
+    /// .csproj の &lt;Version&gt; がビルド時に AssemblyInformationalVersionAttribute へ反映される。
+    /// ハードコードではなくアセンブリ情報から取得することで、リリース時の更新漏れを防ぐ。
+    /// </summary>
+    public static readonly string ServerVersion =
+        typeof(Constants).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? "0.0.0";
     public const string Host = "127.0.0.1";
     public const int DefaultPort = 48091;
     public const string McpHttpPath = "/mcp";

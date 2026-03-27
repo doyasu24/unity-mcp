@@ -8,6 +8,9 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>unity-mcp</ToolCommandName>
     <Version>0.1.2</Version>
+    <!-- InformationalVersion に SourceRevisionId (+hash) を付与しない。
+         Constants.ServerVersion がこの値をランタイムで読み取る。 -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <PackageId>Doyasu24.UnityMcp.Tool</PackageId>
     <Title>Unity MCP</Title>
     <Authors>Doyasu24</Authors>

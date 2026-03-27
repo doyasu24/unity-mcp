@@ -19,13 +19,13 @@ This skill covers only manual version-bump work. CI-automated tasks are excluded
 ## Manual Checklist
 1. Update the tool package version:
    - `Server/UnityMcpServer.csproj` `<Version>`
-2. Update the server runtime version constant:
-   - `Server/Common.cs` `Constants.ServerVersion`
-3. Update user-facing version references in `README.md`:
+   - Note: `Constants.ServerVersion` はこの値からアセンブリ情報経由で自動取得されるため手動更新不要
+2. Update user-facing version references in `README.md`:
    - `dotnet tool install --local ... --version ...`
    - Unity package URL tag (`#v...`)
-4. Update the Unity Plugin package version:
+3. Update the Unity Plugin package version:
    - `UnityMCPPlugin/Assets/Plugins/UnityMCP/package.json` `version`
+   - Note: `Wire.PluginVersion` はこの値から自動取得されるため手動更新不要
 
 ## Verification
 1. Confirm all required version references are aligned with `NEXT_VERSION`.
