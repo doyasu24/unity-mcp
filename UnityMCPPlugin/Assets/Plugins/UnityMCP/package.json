@@ -1,6 +1,6 @@
 {
   "name": "com.doyasu24.unitymcp",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "displayName": "Unity MCP",
   "description": "Unity MCP bridges Unity Editor and MCP clients (Claude, Codex, etc.) through the Model Context Protocol. It provides practical tools that make the development cycle more efficient.",
   "unity": "6000.0",
