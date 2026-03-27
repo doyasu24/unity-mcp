@@ -92,39 +92,47 @@ public sealed class ToolResultFormatterTests
     }
 
     [Fact]
-    public void FormatScreenshotResult_SingleScreenshot_ReturnsExistingFormat()
+    public void FormatScreenshotResult_WithInlineImage_ReturnsImageAndText()
     {
-        // 単一スクリーンショットは現行フォーマットを維持
-        var tempDir = Path.Combine(Path.GetTempPath(), $"unity_mcp_test_{Guid.NewGuid():N}");
-        Directory.CreateDirectory(tempDir);
-        try
+        // Plugin 側で生成された inline_image base64 を使用するフォーマット
+        var inlineBase64 = Convert.ToBase64String(new byte[] { 0x89, 0x50, 0x4E, 0x47 });
+        var payload = new JsonObject
         {
-            var pngBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
-            var path = Path.Combine(tempDir, "test.png");
-            File.WriteAllBytes(path, pngBytes);
+            ["file_path"] = "/path/to/test.png", ["width"] = 1920, ["height"] = 1080,
+            ["camera_name"] = "Main Camera", ["source"] = "game_view",
+            ["inline_image"] = inlineBase64,
+        };
 
-            var payload = new JsonObject
-            {
-                ["file_path"] = path, ["width"] = 1920, ["height"] = 1080,
-                ["camera_name"] = "Main Camera", ["source"] = "game_view",
-            };
+        var result = McpToolService.FormatScreenshotResult(payload);
 
-            var result = McpToolService.FormatScreenshotResult(payload);
+        var content = Assert.IsType<JsonArray>(result["content"]);
+        Assert.Equal(2, content.Count);
 
-            var content = Assert.IsType<JsonArray>(result["content"]);
-            Assert.Equal(2, content.Count);
+        var imageBlock = Assert.IsType<JsonObject>(content[0]);
+        Assert.Equal("image", imageBlock["type"]?.GetValue<string>());
+        Assert.Equal(inlineBase64, imageBlock["data"]?.GetValue<string>());
 
-            var imageBlock = Assert.IsType<JsonObject>(content[0]);
-            Assert.Equal("image", imageBlock["type"]?.GetValue<string>());
+        var textBlock = Assert.IsType<JsonObject>(content[1]);
+        Assert.Equal("text", textBlock["type"]?.GetValue<string>());
+        // inline_image はテキストメタデータから除去されていること
+        var textJson = textBlock["text"]?.GetValue<string>();
+        Assert.DoesNotContain("inline_image", textJson);
 
-            var textBlock = Assert.IsType<JsonObject>(content[1]);
-            Assert.Equal("text", textBlock["type"]?.GetValue<string>());
+        Assert.Null(result["structuredContent"]);
+    }
 
-            Assert.Null(result["structuredContent"]);
-        }
-        finally
+    [Fact]
+    public void FormatScreenshotResult_WithoutInlineImage_ReturnsTextOnly()
+    {
+        var payload = new JsonObject
         {
-            Directory.Delete(tempDir, true);
-        }
+            ["file_path"] = "/path/to/test.png", ["width"] = 1920, ["height"] = 1080,
+            ["camera_name"] = "Main Camera", ["source"] = "game_view",
+        };
+
+        var result = McpToolService.FormatScreenshotResult(payload);
+
+        // inline_image がない場合はテキストのみ（structuredContent 形式）
+        Assert.NotNull(result["structuredContent"]);
     }
 }

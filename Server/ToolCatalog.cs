@@ -746,22 +746,6 @@ internal static class ToolCatalog
                         ["default"] = ScreenshotSources.GameView,
                         ["description"] = "Capture source. 'game_view': composited Game View output (requires Play Mode). 'scene_view': Scene View camera render (works in Edit Mode). 'camera': render from a specific camera (requires camera_path).",
                     },
-                    ["width"] = new JsonObject
-                    {
-                        ["type"] = "integer",
-                        ["minimum"] = ScreenshotLimits.WidthMin,
-                        ["maximum"] = ScreenshotLimits.WidthMax,
-                        ["default"] = ScreenshotLimits.WidthDefault,
-                        ["description"] = "Width of the screenshot in pixels.",
-                    },
-                    ["height"] = new JsonObject
-                    {
-                        ["type"] = "integer",
-                        ["minimum"] = ScreenshotLimits.HeightMin,
-                        ["maximum"] = ScreenshotLimits.HeightMax,
-                        ["default"] = ScreenshotLimits.HeightDefault,
-                        ["description"] = "Height of the screenshot in pixels.",
-                    },
                     ["camera_path"] = new JsonObject
                     {
                         ["type"] = "string",

@@ -268,7 +268,8 @@ namespace UnityMcpPlugin
         [property: JsonProperty("width")] int Width,
         [property: JsonProperty("height")] int Height,
         [property: JsonProperty("camera_name")] string CameraName,
-        [property: JsonProperty("source")] string Source);
+        [property: JsonProperty("source")] string Source,
+        [property: JsonProperty("inline_image")] string InlineImage);
 
 
     // --- Assembly Definition payloads ---

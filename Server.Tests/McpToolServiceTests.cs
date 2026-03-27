@@ -501,19 +501,6 @@ public sealed class McpToolServiceTests
     }
 
     [Fact]
-    public async Task CallToolAsync_ReturnsError_ForCaptureScreenshot_InvalidWidth()
-    {
-        var service = CreateService(new RuntimeState());
-
-        var args = new JsonObject { ["width"] = 99999 };
-        var result = await service.CallToolAsync(ToolNames.CaptureScreenshot, args, CancellationToken.None);
-
-        Assert.True(result["isError"]?.GetValue<bool>());
-        var structured = Assert.IsType<JsonObject>(result["structuredContent"]);
-        Assert.Equal(ErrorCodes.InvalidParams, structured["code"]?.GetValue<string>());
-    }
-
-    [Fact]
     public async Task CallToolAsync_ReturnsError_ForGetHierarchy_NegativeOffset()
     {
         var service = CreateService(new RuntimeState());

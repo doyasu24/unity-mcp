@@ -53,36 +53,20 @@ internal sealed class McpToolService
         }
     }
 
-    private const int MaxInlineImageBytes = 5 * 1024 * 1024; // 5 MB
-
     internal static JsonObject FormatScreenshotResult(object payload)
     {
         var structured = ToolResultFormatter.ToStructuredContent(payload);
-        var filePath = (structured as JsonObject)?["file_path"]?.GetValue<string>();
-
-        if (string.IsNullOrEmpty(filePath) ||
-            !filePath.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
-            !File.Exists(filePath))
-        {
+        if (structured is not JsonObject obj)
             return ToolResultFormatter.Success(payload);
-        }
 
-        try
-        {
-            var fileInfo = new FileInfo(filePath);
-            if (fileInfo.Length > MaxInlineImageBytes)
-            {
-                return ToolResultFormatter.Success(payload);
-            }
+        // Plugin 側で生成済みのダウンスケール base64 を取得し、payload からは除去する
+        var inlineImage = obj["inline_image"]?.GetValue<string>();
+        obj.Remove("inline_image");
 
-            var pngBytes = File.ReadAllBytes(filePath);
-            var base64 = Convert.ToBase64String(pngBytes);
-            return ToolResultFormatter.SuccessWithImage(structured, base64, "image/png");
-        }
-        catch
-        {
-            return ToolResultFormatter.Success(payload);
-        }
+        if (string.IsNullOrEmpty(inlineImage))
+            return ToolResultFormatter.Success(obj);
+
+        return ToolResultFormatter.SuccessWithImage(obj, inlineImage, "image/png");
     }
 
     private async Task<object> ExecuteToolAsync(string toolName, JsonObject arguments, CancellationToken cancellationToken)
@@ -1205,28 +1189,10 @@ internal sealed class McpToolService
                 new JsonObject { ["source"] = source });
         }
 
-        var width = JsonHelpers.GetInt(arguments, "width") ?? ScreenshotLimits.WidthDefault;
-        if (width is < ScreenshotLimits.WidthMin or > ScreenshotLimits.WidthMax)
-        {
-            throw new McpException(
-                ErrorCodes.InvalidParams,
-                $"width must be between {ScreenshotLimits.WidthMin} and {ScreenshotLimits.WidthMax}",
-                new JsonObject { ["width"] = width });
-        }
-
-        var height = JsonHelpers.GetInt(arguments, "height") ?? ScreenshotLimits.HeightDefault;
-        if (height is < ScreenshotLimits.HeightMin or > ScreenshotLimits.HeightMax)
-        {
-            throw new McpException(
-                ErrorCodes.InvalidParams,
-                $"height must be between {ScreenshotLimits.HeightMin} and {ScreenshotLimits.HeightMax}",
-                new JsonObject { ["height"] = height });
-        }
-
         var cameraPath = JsonHelpers.GetString(arguments, "camera_path");
         var outputPath = JsonHelpers.GetString(arguments, "output_path");
 
-        return new CaptureScreenshotRequest(source, width, height, cameraPath, outputPath);
+        return new CaptureScreenshotRequest(source, cameraPath, outputPath);
     }
 
     private static ManageAsmdefRequest ParseManageAsmdefRequest(JsonObject arguments)

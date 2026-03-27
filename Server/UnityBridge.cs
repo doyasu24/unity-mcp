@@ -1361,8 +1361,6 @@ internal sealed class UnityBridge
         var parameters = new JsonObject
         {
             ["source"] = request.Source,
-            ["width"] = request.Width,
-            ["height"] = request.Height,
         };
         if (!string.IsNullOrWhiteSpace(request.CameraPath))
         {

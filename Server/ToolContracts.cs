@@ -392,15 +392,6 @@ internal static class ScreenshotSources
     }
 }
 
-internal static class ScreenshotLimits
-{
-    public const int WidthMin = 1;
-    public const int WidthMax = 7680;
-    public const int WidthDefault = 1920;
-    public const int HeightMin = 1;
-    public const int HeightMax = 4320;
-    public const int HeightDefault = 1080;
-}
 
 internal static class KeywordsActions
 {
@@ -418,7 +409,7 @@ internal static class KeywordsActions
     }
 }
 
-internal sealed record CaptureScreenshotRequest(string Source, int Width, int Height, string? CameraPath, string? OutputPath);
+internal sealed record CaptureScreenshotRequest(string Source, string? CameraPath, string? OutputPath);
 
 internal sealed record CaptureScreenshotResult(JsonNode Payload);
 
