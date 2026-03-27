@@ -33,6 +33,7 @@ namespace UnityMcpPlugin
         internal const string ManageAsmdef = "manage_asmdef";
         internal const string ManagePrefab = "manage_prefab";
         internal const string ManageBuild = "manage_build";
+        internal const string ManagePlayerPrefs = "manage_player_prefs";
     }
 
     internal static class ToolLimits
@@ -293,6 +294,32 @@ namespace UnityMcpPlugin
         internal static bool IsSupported(string action)
         {
             return action == Set || action == Add || action == Remove;
+        }
+    }
+
+    internal static class ManagePlayerPrefsActions
+    {
+        internal const string Get = "get";
+        internal const string Set = "set";
+        internal const string Delete = "delete";
+        internal const string HasKey = "has_key";
+        internal const string DeleteAll = "delete_all";
+
+        internal static bool IsSupported(string action)
+        {
+            return action == Get || action == Set || action == Delete || action == HasKey || action == DeleteAll;
+        }
+    }
+
+    internal static class ManagePlayerPrefsValueTypes
+    {
+        internal const string String = "string";
+        internal const string Int = "int";
+        internal const string Float = "float";
+
+        internal static bool IsSupported(string type)
+        {
+            return type == String || type == Int || type == Float;
         }
     }
 

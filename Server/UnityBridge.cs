@@ -1217,6 +1217,45 @@ internal sealed class UnityBridge
         return parameters;
     }
 
+    public async Task<ManagePlayerPrefsResult> ManagePlayerPrefsAsync(ManagePlayerPrefsRequest request, CancellationToken cancellationToken)
+    {
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ManagePlayerPrefs);
+        var parameters = new JsonObject
+        {
+            ["action"] = request.Action,
+        };
+
+        if (request.Key is not null)
+        {
+            parameters["key"] = request.Key;
+        }
+
+        if (request.ValueType is not null)
+        {
+            parameters["value_type"] = request.ValueType;
+
+            switch (request.ValueType)
+            {
+                case ManagePlayerPrefsValueTypes.String:
+                    if (request.StringValue is not null)
+                        parameters["value"] = request.StringValue;
+                    break;
+                case ManagePlayerPrefsValueTypes.Int:
+                    if (request.IntValue is not null)
+                        parameters["value"] = request.IntValue.Value;
+                    break;
+                case ManagePlayerPrefsValueTypes.Float:
+                    if (request.FloatValue is not null)
+                        parameters["value"] = request.FloatValue.Value;
+                    break;
+            }
+        }
+
+        var payload = await ExecuteSyncToolAsync(ToolNames.ManagePlayerPrefs, parameters, timeoutMs, cancellationToken);
+        return new ManagePlayerPrefsResult(payload);
+    }
+
     /// <summary>
     /// Plugin が compiling=false を返したケースでのフォールバック確認。
     /// 500ms 後に get_editor_state を1回確認し、ドメインリロードやコンパイル開始を検知する。

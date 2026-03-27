@@ -42,6 +42,7 @@ internal static class ToolNames
     public const string ManageAsmdef = "manage_asmdef";
     public const string ManagePrefab = "manage_prefab";
     public const string ManageBuild = "manage_build";
+    public const string ManagePlayerPrefs = "manage_player_prefs";
 }
 
 internal static class ToolLimits
@@ -617,4 +618,46 @@ internal sealed record ManageBuildRequest(
     string? ProfilePath);
 
 internal sealed record ManageBuildResult(JsonNode Payload);
+
+internal static class ManagePlayerPrefsActions
+{
+    public const string Get = "get";
+    public const string Set = "set";
+    public const string Delete = "delete";
+    public const string HasKey = "has_key";
+    public const string DeleteAll = "delete_all";
+
+    public static bool IsSupported(string? action)
+    {
+        return action is Get or Set or Delete or HasKey or DeleteAll;
+    }
+
+    public static JsonArray ToJsonArray()
+    {
+        return new JsonArray(Get, Set, Delete, HasKey, DeleteAll);
+    }
+}
+
+internal static class ManagePlayerPrefsValueTypes
+{
+    public const string String = "string";
+    public const string Int = "int";
+    public const string Float = "float";
+
+    public static bool IsSupported(string? type)
+    {
+        return type is String or Int or Float;
+    }
+
+    public static JsonArray ToJsonArray()
+    {
+        return new JsonArray(String, Int, Float);
+    }
+}
+
+internal sealed record ManagePlayerPrefsRequest(
+    string Action, string? Key, string? ValueType,
+    string? StringValue, int? IntValue, float? FloatValue);
+
+internal sealed record ManagePlayerPrefsResult(JsonNode Payload);
 

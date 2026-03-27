@@ -1076,6 +1076,47 @@ internal static class ToolCatalog
                 ["additionalProperties"] = false,
             },
             MayTriggerRecompile: true),
+
+        [ToolNames.ManagePlayerPrefs] = new(
+            ToolNames.ManagePlayerPrefs,
+            5000,
+            10000,
+            false,
+            "Manages Unity PlayerPrefs: get/set/delete key-value pairs, check key existence, or delete all. " +
+            "Works in both Edit and Play modes. PlayerPrefs stores string, int, and float types; " +
+            "'get' returns all three representations since the stored type is not discoverable.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["action"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = ManagePlayerPrefsActions.ToJsonArray(),
+                        ["description"] = "Operation to perform. get: returns string/int/float values for a key. set: stores a value (requires key, value, value_type). delete: removes a key. has_key: checks if a key exists. delete_all: removes ALL PlayerPrefs (destructive, no undo).",
+                    },
+                    ["key"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "The PlayerPrefs key. Required for get, set, delete, has_key.",
+                    },
+                    ["value"] = new JsonObject
+                    {
+                        ["type"] = new JsonArray("string", "number"),
+                        ["description"] = "Value to store. Required for 'set' action. Interpreted according to value_type.",
+                    },
+                    ["value_type"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = ManagePlayerPrefsValueTypes.ToJsonArray(),
+                        ["default"] = ManagePlayerPrefsValueTypes.String,
+                        ["description"] = "Type to use when storing the value. Only used with 'set' action.",
+                    },
+                },
+                ["required"] = new JsonArray("action"),
+                ["additionalProperties"] = false,
+            }),
     };
 
     public static JsonArray BuildMcpTools()

@@ -97,6 +97,7 @@ internal sealed class McpToolService
             ToolNames.ManageAsmdef => (await _unityBridge.ManageAsmdefAsync(ParseManageAsmdefRequest(arguments), cancellationToken)).Payload,
             ToolNames.ManagePrefab => (await _unityBridge.ManagePrefabAsync(ParseManagePrefabRequest(arguments), cancellationToken)).Payload,
             ToolNames.ManageBuild => (await _unityBridge.ManageBuildAsync(ParseManageBuildRequest(arguments), cancellationToken)).Payload,
+            ToolNames.ManagePlayerPrefs => (await _unityBridge.ManagePlayerPrefsAsync(ParseManagePlayerPrefsRequest(arguments), cancellationToken)).Payload,
             ToolNames.ExecuteBatch => await ExecuteBatchServerSideAsync(arguments, cancellationToken),
             _ => throw new McpException(ErrorCodes.UnknownCommand, $"Unknown tool: {toolName}"),
         };
@@ -1507,6 +1508,81 @@ internal sealed class McpToolService
 
         return new ManageBuildRequest(action!, target, outputPath, scenes, development,
             options, subtarget, property, value, definesAction, buildScenes?.DeepClone() as JsonArray, profilePath);
+    }
+
+    private static ManagePlayerPrefsRequest ParseManagePlayerPrefsRequest(JsonObject arguments)
+    {
+        var action = JsonHelpers.GetString(arguments, "action");
+        if (!ManagePlayerPrefsActions.IsSupported(action))
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"action must be one of: {string.Join(", ", ManagePlayerPrefsActions.ToJsonArray().Select(a => a!.GetValue<string>()))}",
+                new JsonObject { ["action"] = action });
+        }
+
+        if (action == ManagePlayerPrefsActions.DeleteAll)
+        {
+            return new ManagePlayerPrefsRequest(action!, null, null, null, null, null);
+        }
+
+        var key = JsonHelpers.GetString(arguments, "key");
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            throw new McpException(ErrorCodes.InvalidParams, "key is required for this action");
+        }
+
+        string? valueType = null;
+        string? stringValue = null;
+        int? intValue = null;
+        float? floatValue = null;
+
+        if (action == ManagePlayerPrefsActions.Set)
+        {
+            valueType = JsonHelpers.GetString(arguments, "value_type") ?? ManagePlayerPrefsValueTypes.String;
+            if (!ManagePlayerPrefsValueTypes.IsSupported(valueType))
+            {
+                throw new McpException(
+                    ErrorCodes.InvalidParams,
+                    $"value_type must be one of: {string.Join(", ", ManagePlayerPrefsValueTypes.ToJsonArray().Select(a => a!.GetValue<string>()))}",
+                    new JsonObject { ["value_type"] = valueType });
+            }
+
+            if (!arguments.TryGetPropertyValue("value", out var valueNode) || valueNode is null)
+            {
+                throw new McpException(ErrorCodes.InvalidParams, "value is required for 'set' action");
+            }
+
+            switch (valueType)
+            {
+                case ManagePlayerPrefsValueTypes.String:
+                    stringValue = JsonHelpers.GetString(arguments, "value")
+                        ?? valueNode.ToString();
+                    break;
+
+                case ManagePlayerPrefsValueTypes.Int:
+                    intValue = JsonHelpers.GetInt(arguments, "value");
+                    if (intValue is null)
+                    {
+                        throw new McpException(ErrorCodes.InvalidParams,
+                            "value must be a valid integer for value_type='int'");
+                    }
+
+                    break;
+
+                case ManagePlayerPrefsValueTypes.Float:
+                    floatValue = JsonHelpers.GetFloat(arguments, "value");
+                    if (floatValue is null)
+                    {
+                        throw new McpException(ErrorCodes.InvalidParams,
+                            "value must be a valid number for value_type='float'");
+                    }
+
+                    break;
+            }
+        }
+
+        return new ManagePlayerPrefsRequest(action!, key, valueType, stringValue, intValue, floatValue);
     }
 }
 

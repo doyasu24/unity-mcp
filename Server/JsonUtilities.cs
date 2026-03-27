@@ -120,6 +120,41 @@ internal static class JsonHelpers
         return null;
     }
 
+    public static float? GetFloat(JsonObject obj, string propertyName)
+    {
+        if (!obj.TryGetPropertyValue(propertyName, out var value) || value is null)
+        {
+            return null;
+        }
+
+        if (value is JsonValue jsonValue)
+        {
+            if (jsonValue.TryGetValue<float>(out var floatVal))
+            {
+                return floatVal;
+            }
+
+            if (jsonValue.TryGetValue<double>(out var doubleVal))
+            {
+                return (float)doubleVal;
+            }
+
+            if (jsonValue.TryGetValue<int>(out var intVal))
+            {
+                return intVal;
+            }
+
+            if (jsonValue.TryGetValue<string>(out var text) &&
+                float.TryParse(text, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
     public static JsonObject AsObjectOrEmpty(JsonNode? node)
     {
         return node as JsonObject ?? new JsonObject();

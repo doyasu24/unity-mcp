@@ -98,8 +98,11 @@ public sealed class ToolResultFormatterTests
         var inlineBase64 = Convert.ToBase64String(new byte[] { 0x89, 0x50, 0x4E, 0x47 });
         var payload = new JsonObject
         {
-            ["file_path"] = "/path/to/test.png", ["width"] = 1920, ["height"] = 1080,
-            ["camera_name"] = "Main Camera", ["source"] = "game_view",
+            ["file_path"] = "/path/to/test.png",
+            ["width"] = 1920,
+            ["height"] = 1080,
+            ["camera_name"] = "Main Camera",
+            ["source"] = "game_view",
             ["inline_image"] = inlineBase64,
         };
 
@@ -126,8 +129,11 @@ public sealed class ToolResultFormatterTests
     {
         var payload = new JsonObject
         {
-            ["file_path"] = "/path/to/test.png", ["width"] = 1920, ["height"] = 1080,
-            ["camera_name"] = "Main Camera", ["source"] = "game_view",
+            ["file_path"] = "/path/to/test.png",
+            ["width"] = 1920,
+            ["height"] = 1080,
+            ["camera_name"] = "Main Camera",
+            ["source"] = "game_view",
         };
 
         var result = McpToolService.FormatScreenshotResult(payload);

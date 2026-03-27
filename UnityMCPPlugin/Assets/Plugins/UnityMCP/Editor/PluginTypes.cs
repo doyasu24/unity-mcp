@@ -343,6 +343,36 @@ namespace UnityMcpPlugin
         [property: JsonProperty("removed_reference", NullValueHandling = NullValueHandling.Ignore)] AsmdefReferenceInfo RemovedReference,
         [property: JsonProperty("references")] AsmdefReferenceInfo[] References);
 
+    // --- PlayerPrefs payloads ---
+
+    internal sealed record ManagePlayerPrefsGetPayload(
+        [property: JsonProperty("action")] string Action,
+        [property: JsonProperty("key")] string Key,
+        [property: JsonProperty("exists")] bool Exists,
+        [property: JsonProperty("string_value")] string StringValue,
+        [property: JsonProperty("int_value")] int IntValue,
+        [property: JsonProperty("float_value")] float FloatValue);
+
+    internal sealed record ManagePlayerPrefsSetPayload(
+        [property: JsonProperty("action")] string Action,
+        [property: JsonProperty("key")] string Key,
+        [property: JsonProperty("value_type")] string ValueType,
+        [property: JsonProperty("saved")] bool Saved);
+
+    internal sealed record ManagePlayerPrefsDeletePayload(
+        [property: JsonProperty("action")] string Action,
+        [property: JsonProperty("key")] string Key,
+        [property: JsonProperty("deleted")] bool Deleted);
+
+    internal sealed record ManagePlayerPrefsHasKeyPayload(
+        [property: JsonProperty("action")] string Action,
+        [property: JsonProperty("key")] string Key,
+        [property: JsonProperty("exists")] bool Exists);
+
+    internal sealed record ManagePlayerPrefsDeleteAllPayload(
+        [property: JsonProperty("action")] string Action,
+        [property: JsonProperty("deleted")] bool Deleted);
+
     internal sealed record RunTestsStatusPayload(
         [property: JsonProperty("status")] string Status);
 

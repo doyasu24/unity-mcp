@@ -111,6 +111,51 @@ namespace UnityMcpPlugin
             return null;
         }
 
+        internal static float? GetFloat(JToken map, string key)
+        {
+            if (map?.Type != JTokenType.Object)
+            {
+                return null;
+            }
+
+            var value = map[key];
+            if (value == null)
+            {
+                return null;
+            }
+
+            switch (value.Type)
+            {
+                case JTokenType.Float:
+                {
+                    return value.Value<float>();
+                }
+                case JTokenType.Integer:
+                {
+                    var longValue = value.Value<long>();
+                    if (longValue >= float.MinValue && longValue <= float.MaxValue)
+                    {
+                        return (float)longValue;
+                    }
+
+                    return null;
+                }
+                case JTokenType.String:
+                {
+                    var text = value.Value<string>();
+                    if (float.TryParse(text, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+                    {
+                        return parsed;
+                    }
+
+                    return null;
+                }
+                default:
+                    return null;
+            }
+        }
+
         internal static bool TryGetObject(JToken map, string key, out JObject value)
         {
             if (map?.Type != JTokenType.Object)
