@@ -575,56 +575,60 @@ namespace UnityMcpPlugin.Tools
         // build（async fire-and-forget パターン）
         // -----------------------------------------------------------
 
-        private Task<object> ExecuteBuildAsync(JObject parameters)
+        private async Task<object> ExecuteBuildAsync(JObject parameters)
         {
             // ポーリングチェックは ExecuteAsync 冒頭で実施済み。
             // ここに到達するのは新規ビルド開始時のみ。
 
-            // Play Mode ガード（main thread で確認）
-            if (EditorApplication.isPlaying)
-            {
-                throw new PluginException(SceneToolErrors.PlayModeActive,
-                    "Cannot build while in Play Mode. Use control_play_mode to stop playback first.");
-            }
-
-            // パラメータ解析
-            var targetName = Payload.GetString(parameters, "target");
+            // output_path バリデーション（Unity API 不要）
             var outputPath = Payload.GetString(parameters, "output_path");
             if (string.IsNullOrEmpty(outputPath))
             {
                 throw new PluginException("ERR_INVALID_PARAMS", "output_path is required for 'build' action");
             }
 
-            BuildTarget buildTarget;
-            if (!string.IsNullOrEmpty(targetName))
+            // Play Mode ガード + Unity API 依存のパラメータ解析をメインスレッドで実行
+            var (buildTarget, scenes) = await MainThreadDispatcher.InvokeAsync(() =>
             {
-                if (!TargetMap.TryGetValue(targetName, out buildTarget))
+                if (EditorApplication.isPlaying)
                 {
-                    throw new PluginException(BuildToolErrors.InvalidTarget, $"Unknown build target: {targetName}");
+                    throw new PluginException(SceneToolErrors.PlayModeActive,
+                        "Cannot build while in Play Mode. Use control_play_mode to stop playback first.");
                 }
-            }
-            else
-            {
-                buildTarget = EditorUserBuildSettings.activeBuildTarget;
-            }
 
-            // シーン
-            string[] scenes = null;
-            var scenesToken = parameters["scenes"] as JArray;
-            if (scenesToken != null && scenesToken.Count > 0)
-            {
-                scenes = scenesToken.Select(s => s.Value<string>()).Where(s => s != null).ToArray();
-            }
+                var targetName = Payload.GetString(parameters, "target");
+                BuildTarget bt;
+                if (!string.IsNullOrEmpty(targetName))
+                {
+                    if (!TargetMap.TryGetValue(targetName, out bt))
+                    {
+                        throw new PluginException(BuildToolErrors.InvalidTarget, $"Unknown build target: {targetName}");
+                    }
+                }
+                else
+                {
+                    bt = EditorUserBuildSettings.activeBuildTarget;
+                }
 
-            if (scenes == null || scenes.Length == 0)
-            {
-                scenes = EditorBuildSettings.scenes
-                    .Where(s => s.enabled)
-                    .Select(s => s.path)
-                    .ToArray();
-            }
+                string[] sc = null;
+                var scenesToken = parameters["scenes"] as JArray;
+                if (scenesToken != null && scenesToken.Count > 0)
+                {
+                    sc = scenesToken.Select(s => s.Value<string>()).Where(s => s != null).ToArray();
+                }
 
-            // BuildOptions
+                if (sc == null || sc.Length == 0)
+                {
+                    sc = EditorBuildSettings.scenes
+                        .Where(s => s.enabled)
+                        .Select(s => s.path)
+                        .ToArray();
+                }
+
+                return (bt, sc);
+            });
+
+            // BuildOptions 解析（Unity API 不要）
             var buildOptions = BuildOptions.None;
             var development = Payload.GetBool(parameters, "development") ?? false;
             if (development)
@@ -657,7 +661,7 @@ namespace UnityMcpPlugin.Tools
 
             _ = ExecuteAndCacheBuildResultAsync(buildTarget, outputPath, scenes, buildOptions, subtarget);
 
-            return Task.FromResult<object>(new JObject { ["status"] = "started" });
+            return new JObject { ["status"] = "started" };
         }
 
         /// <summary>
