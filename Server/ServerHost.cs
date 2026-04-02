@@ -92,6 +92,14 @@ internal static class ServerHost
         app.Map(Constants.UnityWsPath, static (HttpContext context, UnityBridge bridge) =>
             bridge.HandleWebSocketEndpointAsync(context));
 
+        // Claude SDK が未登録パス（OAuth ディスカバリ等）の非 JSON 404 をパースできない問題の回避策
+        app.MapFallback(static async (HttpContext context) =>
+        {
+            context.Response.StatusCode = 404;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync("""{"error":"not_found"}""");
+        });
+
         return app;
     }
 
