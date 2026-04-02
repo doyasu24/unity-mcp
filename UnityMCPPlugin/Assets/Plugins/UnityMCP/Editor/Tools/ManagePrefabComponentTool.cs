@@ -12,6 +12,12 @@ namespace UnityMcpPlugin.Tools
 
         public override object Execute(JObject parameters)
         {
+            if (EditorApplication.isPlaying)
+            {
+                throw new PluginException(SceneToolErrors.PlayModeActive,
+                    "Cannot modify prefab components while in Play Mode. Use control_play_mode to stop playback first, then retry.");
+            }
+
             var prefabPath = Payload.GetString(parameters, "prefab_path");
             if (string.IsNullOrEmpty(prefabPath))
             {
