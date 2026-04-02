@@ -1124,7 +1124,17 @@ internal sealed class UnityBridge
             if (request.Action == ManageBuildActions.Build)
             {
                 await EnsureEditModeAsync(cancellationToken);
-                await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, cancellationToken);
+                try
+                {
+                    await ExecuteSyncToolAsync(ToolNames.ManageBuild, parameters, timeoutMs, cancellationToken);
+                }
+                catch (McpException ex) when (ex.Code is ErrorCodes.ReconnectTimeout
+                    or ErrorCodes.UnityDisconnected or ErrorCodes.RequestTimeout)
+                {
+                    // ビルド開始コマンドの一時的な送信エラー。ポーリングで状況を確認する。
+                    _logger.ZLogDebug($"ManageBuild initial send transient error, falling through to polling: code={ex.Code}");
+                    await EnsureEditorReadyAsync(cancellationToken);
+                }
 
                 var editorStateTimeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.GetEditorState);
                 var buildDeadline = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
@@ -1133,8 +1143,19 @@ internal sealed class UnityBridge
                     cancellationToken.ThrowIfCancellationRequested();
                     await Task.Delay(2000, cancellationToken);
 
-                    var pollPayload = await ExecuteSyncToolAsync(
-                        ToolNames.ManageBuild, new JsonObject(), editorStateTimeoutMs, cancellationToken);
+                    JsonNode pollPayload;
+                    try
+                    {
+                        pollPayload = await ExecuteSyncToolAsync(
+                            ToolNames.ManageBuild, new JsonObject(), editorStateTimeoutMs, cancellationToken);
+                    }
+                    catch (McpException ex) when (ex.Code is ErrorCodes.ReconnectTimeout
+                        or ErrorCodes.UnityDisconnected or ErrorCodes.RequestTimeout)
+                    {
+                        _logger.ZLogDebug($"ManageBuild poll transient error, retrying: code={ex.Code} message={ex.Message}");
+                        await EnsureEditorReadyAsync(cancellationToken);
+                        continue;
+                    }
 
                     if (pollPayload is JsonObject pollObj && pollObj.ContainsKey("result"))
                     {
@@ -1500,10 +1521,13 @@ internal sealed class UnityBridge
             {
                 await ExecuteSyncToolAsync(ToolNames.RunTests, parameters, timeoutMs, cancellationToken);
             }
-            catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+            catch (McpException ex) when (ex.Code is ErrorCodes.ReconnectTimeout
+                or ErrorCodes.UnityDisconnected or ErrorCodes.RequestTimeout)
             {
-                // ReconnectTimeout は AfterSend 後の切断でも発生するため、テストが既に開始済みの可能性がある。
+                // 送信後の切断（ReconnectTimeout / RequestTimeout）: テストが既に開始済みの可能性がある。
                 // リトライは二重実行のリスクがあるため行わず、再接続を待ってポーリングで状況を確認する。
+                // 送信前の切断（UnityDisconnected）: テスト未開始。最初のポーリングで Plugin 側がテストを開始する。
+                _logger.ZLogDebug($"RunTests initial send transient error, falling through to polling: code={ex.Code}");
                 await EnsureEditorReadyAsync(cancellationToken);
             }
 
@@ -1521,9 +1545,12 @@ internal sealed class UnityBridge
                     pollPayload = await ExecuteSyncToolAsync(
                         ToolNames.RunTests, new JsonObject(), editorStateTimeoutMs, cancellationToken);
                 }
-                catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+                catch (McpException ex) when (ex.Code is ErrorCodes.ReconnectTimeout
+                    or ErrorCodes.UnityDisconnected or ErrorCodes.RequestTimeout)
                 {
-                    // 切断中はポーリングをスキップして次のイテレーションへ
+                    // 一時的なエラー（切断・タイムアウト）はポーリングをスキップして次のイテレーションへ。
+                    // テストは Plugin 側でバックグラウンド実行中のため、ポーリング失敗で中断する必要はない。
+                    _logger.ZLogDebug($"RunTests poll transient error, retrying: code={ex.Code} message={ex.Message}");
                     await EnsureEditorReadyAsync(cancellationToken);
                     continue;
                 }
