@@ -266,7 +266,7 @@ internal sealed record RunTestsResult(JsonNode Payload);
 
 internal sealed record ListScenesRequest(string? NamePattern, int MaxResults, int Offset);
 
-internal sealed record GetSceneHierarchyRequest(string? RootPath, int MaxDepth, int MaxGameObjects, int Offset, string[]? ComponentFilter);
+internal sealed record GetSceneHierarchyRequest(string? RootPath, string? ScenePath, int MaxDepth, int MaxGameObjects, int Offset, string[]? ComponentFilter);
 
 internal sealed record GetSceneHierarchyResult(JsonNode Payload);
 

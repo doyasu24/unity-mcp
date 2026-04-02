@@ -29,6 +29,9 @@ namespace UnityMcpPlugin.Tools
             return "/" + path;
         }
 
+        /// <summary>
+        /// 全ロードシーンのルート GO を走査してパスで解決する。
+        /// </summary>
         private static GameObject FindByTransformWalk(string path)
         {
             var normalized = path.TrimStart('/');
@@ -38,17 +41,23 @@ namespace UnityMcpPlugin.Tools
             }
 
             var parts = normalized.Split('/');
-            var scene = SceneManager.GetActiveScene();
-            var roots = scene.GetRootGameObjects();
 
             GameObject root = null;
-            foreach (var r in roots)
+            for (var i = 0; i < SceneManager.sceneCount; i++)
             {
-                if (r.name == parts[0])
+                var scene = SceneManager.GetSceneAt(i);
+                if (!scene.isLoaded) continue;
+
+                foreach (var r in scene.GetRootGameObjects())
                 {
-                    root = r;
-                    break;
+                    if (r.name == parts[0])
+                    {
+                        root = r;
+                        break;
+                    }
                 }
+
+                if (root != null) break;
             }
 
             if (root == null)

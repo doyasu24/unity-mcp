@@ -13,159 +13,320 @@ namespace UnityMcpPlugin.Tools
         public override object Execute(JObject parameters)
         {
             var rootPath = Payload.GetString(parameters, "root_path");
+            var scenePath = Payload.GetString(parameters, "scene_path");
             var maxDepth = Payload.GetInt(parameters, "max_depth") ?? SceneToolLimits.MaxDepthDefault;
             var maxGameObjects = Payload.GetInt(parameters, "max_game_objects") ?? SceneToolLimits.MaxGameObjectsDefault;
             var offset = Payload.GetInt(parameters, "offset") ?? 0;
             var componentFilter = ParseComponentFilter(parameters);
 
-            var scene = SceneManager.GetActiveScene();
-            var result = new JObject
-            {
-                ["scene_name"] = scene.name,
-                ["scene_path"] = scene.path
-            };
+            var activeScene = SceneManager.GetActiveScene();
+            var result = new JObject();
 
-            List<GameObject> startRoots;
-            if (!string.IsNullOrEmpty(rootPath))
-            {
-                var rootGo = GameObjectResolver.Resolve(rootPath);
-                if (rootGo == null)
-                {
-                    throw new PluginException(SceneToolErrors.ObjectNotFound,
-                        $"GameObject not found: {rootPath}");
-                }
-
-                startRoots = new List<GameObject> { rootGo };
-            }
-            else
-            {
-                var sceneRoots = scene.GetRootGameObjects();
-                startRoots = new List<GameObject>(sceneRoots);
-            }
+            // 対象シーンの決定
+            var targetScenes = ResolveTargetScenes(scenePath, rootPath, activeScene, result, out var resolvedRootGo);
+            // フィルタ指定時は対象シーンのみ出力、未指定時は全ロードシーンのメタデータを含める
+            var isFiltered = !string.IsNullOrEmpty(scenePath) || !string.IsNullOrEmpty(rootPath);
 
             if (offset > 0)
             {
-                ExecuteWithOffset(result, startRoots, maxDepth, maxGameObjects, offset, componentFilter);
+                ExecuteMultiSceneFlat(result, targetScenes, activeScene, resolvedRootGo, maxDepth, maxGameObjects, offset, componentFilter, isFiltered);
             }
             else
             {
-                ExecuteTree(result, startRoots, maxDepth, maxGameObjects, componentFilter);
+                ExecuteMultiSceneTree(result, targetScenes, activeScene, resolvedRootGo, maxDepth, maxGameObjects, componentFilter, isFiltered);
             }
 
             return result;
         }
 
-        private static void ExecuteTree(JObject result, List<GameObject> startRoots, int maxDepth, int maxGameObjects, HashSet<string> componentFilter)
+        /// <summary>
+        /// 対象シーンを決定する。scene_path 指定時はそのシーンのみ、root_path 指定時は GO の所属シーンのみ、
+        /// いずれも未指定なら全ロードシーンを返す。
+        /// </summary>
+        private static List<Scene> ResolveTargetScenes(string scenePath, string rootPath, Scene activeScene, JObject result, out GameObject resolvedRootGo)
         {
-            var matchCount = 0;
-            var truncated = false;
-            var rootArray = new JArray();
+            var targetScenes = new List<Scene>();
+            resolvedRootGo = null;
 
-            var queue = new Queue<(GameObject go, JArray parentArray, int depth)>();
-            foreach (var root in startRoots)
+            if (!string.IsNullOrEmpty(scenePath))
             {
-                queue.Enqueue((root, rootArray, 0));
-            }
-
-            while (queue.Count > 0)
-            {
-                var (go, parentArray, depth) = queue.Dequeue();
-
-                var matches = MatchesComponentFilter(go, componentFilter);
-                if (matches)
+                var found = false;
+                for (var i = 0; i < SceneManager.sceneCount; i++)
                 {
-                    if (matchCount >= maxGameObjects)
+                    var s = SceneManager.GetSceneAt(i);
+                    if (s.path == scenePath)
                     {
-                        truncated = true;
+                        if (!s.isLoaded)
+                        {
+                            throw new PluginException(SceneToolErrors.ObjectNotFound,
+                                $"Scene is not loaded: {scenePath}");
+                        }
+
+                        targetScenes.Add(s);
+                        found = true;
                         break;
                     }
-
-                    matchCount++;
                 }
 
-                var node = BuildNode(go, matches || componentFilter == null);
-
-                if (depth < maxDepth)
+                if (!found)
                 {
-                    var childArray = new JArray();
-                    for (var i = 0; i < go.transform.childCount; i++)
+                    throw new PluginException(SceneToolErrors.ObjectNotFound,
+                        $"Scene not found among loaded scenes: {scenePath}");
+                }
+            }
+            else if (!string.IsNullOrEmpty(rootPath))
+            {
+                resolvedRootGo = GameObjectResolver.Resolve(rootPath);
+                if (resolvedRootGo == null)
+                {
+                    throw new PluginException(SceneToolErrors.ObjectNotFound,
+                        $"GameObject not found: {rootPath}");
+                }
+
+                targetScenes.Add(resolvedRootGo.scene);
+
+                // 曖昧性チェック: root_path の先頭セグメントが複数シーンに存在するか
+                CheckAmbiguousRootPath(rootPath, resolvedRootGo, result);
+            }
+            else
+            {
+                for (var i = 0; i < SceneManager.sceneCount; i++)
+                {
+                    var s = SceneManager.GetSceneAt(i);
+                    if (s.isLoaded)
                     {
-                        var child = go.transform.GetChild(i).gameObject;
-                        queue.Enqueue((child, childArray, depth + 1));
+                        targetScenes.Add(s);
+                    }
+                }
+            }
+
+            return targetScenes;
+        }
+
+        /// <summary>
+        /// root_path の先頭セグメントが複数シーンに存在する場合、レスポンスに警告情報を追加する。
+        /// </summary>
+        private static void CheckAmbiguousRootPath(string rootPath, GameObject resolvedGo, JObject result)
+        {
+            var normalized = rootPath.TrimStart('/');
+            if (string.IsNullOrEmpty(normalized)) return;
+
+            var rootName = normalized.Split('/')[0];
+            var resolvedScene = resolvedGo.scene;
+            var candidateScenes = new List<string>();
+
+            for (var i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var scene = SceneManager.GetSceneAt(i);
+                if (!scene.isLoaded) continue;
+
+                foreach (var go in scene.GetRootGameObjects())
+                {
+                    if (go.name == rootName && scene.path != resolvedScene.path)
+                    {
+                        candidateScenes.Add(scene.path);
+                        break;
+                    }
+                }
+            }
+
+            if (candidateScenes.Count > 0)
+            {
+                result["ambiguous_root_path"] = true;
+                var arr = new JArray { resolvedScene.path };
+                foreach (var p in candidateScenes) arr.Add(p);
+                result["ambiguous_candidate_scenes"] = arr;
+            }
+        }
+
+        private static void ExecuteMultiSceneTree(JObject result, List<Scene> targetScenes, Scene activeScene,
+            GameObject resolvedRootGo, int maxDepth, int maxGameObjects, HashSet<string> componentFilter, bool isFiltered)
+        {
+            var scenesArray = new JArray();
+            var totalCount = 0;
+            var truncated = false;
+
+            // フィルタ時は対象シーンのみ、未フィルタ時は全ロードシーン（メタデータ含む）
+            var outputScenes = isFiltered ? targetScenes : GetAllLoadedScenes();
+
+            foreach (var scene in outputScenes)
+            {
+                var sceneEntry = new JObject
+                {
+                    ["name"] = scene.name,
+                    ["path"] = scene.path,
+                    ["is_active"] = scene.path == activeScene.path
+                };
+
+                var isTarget = IsTargetScene(scene, targetScenes);
+
+                if (isTarget && !truncated)
+                {
+                    List<GameObject> roots;
+                    if (resolvedRootGo != null)
+                    {
+                        roots = resolvedRootGo.scene.path == scene.path
+                            ? new List<GameObject> { resolvedRootGo }
+                            : new List<GameObject>();
+                    }
+                    else
+                    {
+                        roots = new List<GameObject>(scene.GetRootGameObjects());
                     }
 
-                    node["children"] = childArray;
-                }
-                else if (go.transform.childCount > 0)
-                {
-                    node["children"] = new JValue("...");
-                    truncated = true;
+                    var rootArray = new JArray();
+                    var queue = new Queue<(GameObject go, JArray parentArray, int depth)>();
+                    foreach (var root in roots)
+                    {
+                        queue.Enqueue((root, rootArray, 0));
+                    }
+
+                    while (queue.Count > 0)
+                    {
+                        var (go, parentArray, depth) = queue.Dequeue();
+
+                        var matches = MatchesComponentFilter(go, componentFilter);
+                        if (matches)
+                        {
+                            if (totalCount >= maxGameObjects)
+                            {
+                                truncated = true;
+                                break;
+                            }
+
+                            totalCount++;
+                        }
+
+                        var node = BuildNode(go, matches || componentFilter == null);
+
+                        if (depth < maxDepth)
+                        {
+                            var childArray = new JArray();
+                            for (var ci = 0; ci < go.transform.childCount; ci++)
+                            {
+                                var child = go.transform.GetChild(ci).gameObject;
+                                queue.Enqueue((child, childArray, depth + 1));
+                            }
+
+                            node["children"] = childArray;
+                        }
+                        else if (go.transform.childCount > 0)
+                        {
+                            node["children"] = new JValue("...");
+                            truncated = true;
+                        }
+                        else
+                        {
+                            node["children"] = new JArray();
+                        }
+
+                        parentArray.Add(node);
+                    }
+
+                    sceneEntry["root_game_objects"] = rootArray;
                 }
                 else
                 {
-                    node["children"] = new JArray();
+                    sceneEntry["root_game_objects"] = new JArray();
                 }
 
-                parentArray.Add(node);
+                scenesArray.Add(sceneEntry);
             }
 
-            result["root_game_objects"] = rootArray;
-            result["total_game_objects"] = matchCount;
+            result["scenes"] = scenesArray;
+            result["total_game_objects"] = totalCount;
             result["truncated"] = truncated;
         }
 
-        private static void ExecuteWithOffset(JObject result, List<GameObject> startRoots, int maxDepth, int maxGameObjects, int offset, HashSet<string> componentFilter)
+        private static void ExecuteMultiSceneFlat(JObject result, List<Scene> targetScenes, Scene activeScene,
+            GameObject resolvedRootGo, int maxDepth, int maxGameObjects, int offset, HashSet<string> componentFilter, bool isFiltered)
         {
+            var outputScenes = isFiltered ? targetScenes : GetAllLoadedScenes();
             var globalIndex = 0;
             var emittedCount = 0;
-            var truncated = false;
-            var flatArray = new JArray();
+            var budgetExhausted = false;
+            var depthTruncated = false;
 
-            var queue = new Queue<(GameObject go, int depth)>();
-            foreach (var root in startRoots)
+            // シーンごとの flat GO を格納
+            var sceneGameObjects = new Dictionary<string, JArray>();
+            foreach (var scene in outputScenes)
             {
-                queue.Enqueue((root, 0));
+                sceneGameObjects[scene.path] = new JArray();
             }
 
-            while (queue.Count > 0)
+            foreach (var scene in targetScenes)
             {
-                var (go, depth) = queue.Dequeue();
+                if (budgetExhausted) break;
 
-                if (MatchesComponentFilter(go, componentFilter))
+                List<GameObject> roots;
+                if (resolvedRootGo != null)
                 {
-                    if (globalIndex >= offset && emittedCount < maxGameObjects)
-                    {
-                        flatArray.Add(BuildNode(go, true));
-                        emittedCount++;
-                    }
-                    else if (emittedCount >= maxGameObjects)
-                    {
-                        truncated = true;
-                        break;
-                    }
-
-                    globalIndex++;
+                    roots = resolvedRootGo.scene.path == scene.path
+                        ? new List<GameObject> { resolvedRootGo }
+                        : new List<GameObject>();
+                }
+                else
+                {
+                    roots = new List<GameObject>(scene.GetRootGameObjects());
                 }
 
-                if (depth < maxDepth)
+                var queue = new Queue<(GameObject go, int depth)>();
+                foreach (var root in roots)
                 {
-                    for (var i = 0; i < go.transform.childCount; i++)
-                    {
-                        queue.Enqueue((go.transform.GetChild(i).gameObject, depth + 1));
-                    }
+                    queue.Enqueue((root, 0));
                 }
-                else if (go.transform.childCount > 0)
+
+                while (queue.Count > 0)
                 {
-                    truncated = true;
+                    var (go, depth) = queue.Dequeue();
+
+                    if (MatchesComponentFilter(go, componentFilter))
+                    {
+                        if (globalIndex >= offset && emittedCount < maxGameObjects)
+                        {
+                            sceneGameObjects[scene.path].Add(BuildNode(go, true));
+                            emittedCount++;
+                        }
+                        else if (emittedCount >= maxGameObjects)
+                        {
+                            budgetExhausted = true;
+                            break;
+                        }
+
+                        globalIndex++;
+                    }
+
+                    if (depth < maxDepth)
+                    {
+                        for (var ci = 0; ci < go.transform.childCount; ci++)
+                        {
+                            queue.Enqueue((go.transform.GetChild(ci).gameObject, depth + 1));
+                        }
+                    }
+                    else if (go.transform.childCount > 0)
+                    {
+                        depthTruncated = true;
+                    }
                 }
             }
 
-            if (!truncated && queue.Count > 0)
+            var truncated = budgetExhausted || depthTruncated;
+
+            var scenesArray = new JArray();
+            foreach (var scene in outputScenes)
             {
-                truncated = true;
+                var sceneEntry = new JObject
+                {
+                    ["name"] = scene.name,
+                    ["path"] = scene.path,
+                    ["is_active"] = scene.path == activeScene.path,
+                    ["game_objects"] = sceneGameObjects.TryGetValue(scene.path, out var goArray) ? goArray : new JArray()
+                };
+
+                scenesArray.Add(sceneEntry);
             }
 
-            result["game_objects"] = flatArray;
+            result["scenes"] = scenesArray;
             result["total_game_objects"] = emittedCount;
             result["truncated"] = truncated;
 
@@ -173,6 +334,28 @@ namespace UnityMcpPlugin.Tools
             {
                 result["next_offset"] = offset + emittedCount;
             }
+        }
+
+        private static List<Scene> GetAllLoadedScenes()
+        {
+            var scenes = new List<Scene>();
+            for (var i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var s = SceneManager.GetSceneAt(i);
+                if (s.isLoaded) scenes.Add(s);
+            }
+
+            return scenes;
+        }
+
+        private static bool IsTargetScene(Scene scene, List<Scene> targetScenes)
+        {
+            foreach (var t in targetScenes)
+            {
+                if (t.path == scene.path) return true;
+            }
+
+            return false;
         }
 
         private static JObject BuildNode(GameObject go, bool includeComponents)

@@ -407,6 +407,7 @@ internal sealed class McpToolService
     private static GetSceneHierarchyRequest ParseGetSceneHierarchyRequest(JsonObject arguments)
     {
         var rootPath = JsonHelpers.GetString(arguments, "root_path");
+        var scenePath = JsonHelpers.GetString(arguments, "scene_path");
 
         var maxDepth = JsonHelpers.GetInt(arguments, "max_depth") ?? SceneToolLimits.MaxDepthDefault;
         if (maxDepth is < SceneToolLimits.MaxDepthMin or > SceneToolLimits.MaxDepthMax)
@@ -435,7 +436,7 @@ internal sealed class McpToolService
 
         var componentFilter = ParseComponentFilter(arguments);
 
-        return new GetSceneHierarchyRequest(rootPath, maxDepth, maxGameObjects, offset, componentFilter);
+        return new GetSceneHierarchyRequest(rootPath, scenePath, maxDepth, maxGameObjects, offset, componentFilter);
     }
 
     private static GetSceneComponentInfoRequest ParseGetSceneComponentInfoRequest(JsonObject arguments)

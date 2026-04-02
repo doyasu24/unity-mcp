@@ -82,7 +82,12 @@ namespace UnityMcpPlugin.Tests
 
             var jobj = result as JObject;
             Assert.That(jobj, Is.Not.Null);
-            Assert.That(jobj["scene_name"], Is.Not.Null);
+            var scenes = jobj["scenes"] as JArray;
+            Assert.That(scenes, Is.Not.Null);
+            Assert.That(scenes.Count, Is.GreaterThanOrEqualTo(1));
+            Assert.That(scenes[0]["name"], Is.Not.Null);
+            Assert.That(scenes[0]["path"], Is.Not.Null);
+            Assert.That(scenes[0]["is_active"]?.Value<bool>(), Is.True);
         }
 
         [Test]
@@ -96,6 +101,10 @@ namespace UnityMcpPlugin.Tests
 
             Assert.That(result, Is.Not.Null);
             Assert.That(result["total_game_objects"]?.Value<int>(), Is.GreaterThanOrEqualTo(1));
+
+            var scenes = result["scenes"] as JArray;
+            Assert.That(scenes, Is.Not.Null);
+            Assert.That(scenes[0]["root_game_objects"], Is.Not.Null);
         }
 
         [Test]
@@ -108,6 +117,10 @@ namespace UnityMcpPlugin.Tests
 
             var result = new SceneHierarchyTool().Execute(new JObject { ["root_path"] = "/FilterTarget" }) as JObject;
             Assert.That(result, Is.Not.Null);
+
+            var scenes = result["scenes"] as JArray;
+            Assert.That(scenes, Is.Not.Null);
+            Assert.That(scenes.Count, Is.EqualTo(1));
         }
 
         [Test]
@@ -116,6 +129,53 @@ namespace UnityMcpPlugin.Tests
             var ex = Assert.Throws<PluginException>(() =>
                 new SceneHierarchyTool().Execute(new JObject { ["root_path"] = "/NonExistent" }));
             Assert.That(ex.Code, Is.EqualTo("ERR_OBJECT_NOT_FOUND"));
+        }
+
+        [Test]
+        public void SceneHierarchyTool_WithScenePath_ReturnsOnlyThatScene()
+        {
+            new GameObject("ScenePathTarget");
+            var scene = SceneManager.GetActiveScene();
+
+            var result = new SceneHierarchyTool().Execute(
+                new JObject { ["scene_path"] = scene.path }) as JObject;
+            Assert.That(result, Is.Not.Null);
+            var scenes = result["scenes"] as JArray;
+            Assert.That(scenes.Count, Is.EqualTo(1));
+            Assert.That(scenes[0]["path"]?.Value<string>(), Is.EqualTo(scene.path));
+        }
+
+        [Test]
+        public void SceneHierarchyTool_InvalidScenePath_ThrowsPluginException()
+        {
+            var ex = Assert.Throws<PluginException>(() =>
+                new SceneHierarchyTool().Execute(
+                    new JObject { ["scene_path"] = "Assets/NonExistent.unity" }));
+            Assert.That(ex.Code, Is.EqualTo("ERR_OBJECT_NOT_FOUND"));
+        }
+
+        [Test]
+        public void ListScenesTool_ReturnsLoadState()
+        {
+            var result = new ListScenesTool().Execute(new JObject()) as ListScenesPayload;
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.Scenes.Count, Is.GreaterThanOrEqualTo(1));
+
+            // アクティブシーンが結果に含まれ、ロード状態フラグが正しいことを確認
+            var activeScene = SceneManager.GetActiveScene();
+            SceneEntry activeEntry = null;
+            foreach (var entry in result.Scenes)
+            {
+                if (entry.Path == activeScene.path)
+                {
+                    activeEntry = entry;
+                    break;
+                }
+            }
+
+            Assert.That(activeEntry, Is.Not.Null, "Active scene should appear in list_scenes results");
+            Assert.That(activeEntry.IsLoaded, Is.True);
+            Assert.That(activeEntry.IsActive, Is.True);
         }
 
         [Test]

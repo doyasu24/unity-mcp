@@ -170,17 +170,22 @@ internal static class ToolCatalog
             10000,
             30000,
             false,
-            "Returns the scene's or a Prefab asset's GameObject tree with component type names.",
+            "Returns loaded scenes' or a Prefab asset's GameObject tree with component type names. Response groups GameObjects by scene in a 'scenes' array.",
             new JsonObject
             {
                 ["type"] = "object",
                 ["properties"] = new JsonObject
                 {
-                    ["prefab_path"] = PrefabPathProperty("Omit for active scene."),
+                    ["prefab_path"] = PrefabPathProperty("Omit for loaded scenes."),
+                    ["scene_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Scene asset path to filter (e.g. 'Assets/Scenes/Main.unity'). Omit to return all loaded scenes. Use to disambiguate when root_path matches GameObjects in multiple scenes.",
+                    },
                     ["root_path"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "Hierarchy path of a GameObject to scope traversal (e.g. \"/Canvas\" or \"Player/Weapon\"). Only this GameObject and its descendants are returned. Omit to return the entire scene. NOTE: this parameter is 'root_path', not 'game_object_path'.",
+                        ["description"] = "Hierarchy path of a GameObject to scope traversal (e.g. \"/Canvas\" or \"Player/Weapon\"). Only this GameObject and its descendants are returned. Omit to return the entire scene(s). NOTE: this parameter is 'root_path', not 'game_object_path'.",
                     },
                     ["max_depth"] = new JsonObject
                     {
@@ -310,7 +315,7 @@ internal static class ToolCatalog
             5000,
             10000,
             false,
-            "Lists scene files in the Unity project.",
+            "Lists scene files in the Unity project with load state (is_loaded, is_dirty, is_active).",
             new JsonObject
             {
                 ["type"] = "object",

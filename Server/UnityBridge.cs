@@ -426,6 +426,10 @@ internal sealed class UnityBridge
         {
             parameters["root_path"] = request.RootPath;
         }
+        if (!string.IsNullOrWhiteSpace(request.ScenePath))
+        {
+            parameters["scene_path"] = request.ScenePath;
+        }
         if (request.ComponentFilter is { Length: > 0 })
         {
             parameters["component_filter"] = new JsonArray(request.ComponentFilter.Select(s => (JsonNode)s).ToArray());

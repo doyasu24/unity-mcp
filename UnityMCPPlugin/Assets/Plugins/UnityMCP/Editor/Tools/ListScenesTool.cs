@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
+using UnityEngine.SceneManagement;
 
 namespace UnityMcpPlugin.Tools
 {
@@ -14,6 +15,18 @@ namespace UnityMcpPlugin.Tools
 
         public override object Execute(JObject parameters)
         {
+            // ロード済みシーンの辞書を構築（パス → Scene）
+            var activeScene = SceneManager.GetActiveScene();
+            var loadedScenes = new Dictionary<string, Scene>(SceneManager.sceneCount);
+            for (var i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var s = SceneManager.GetSceneAt(i);
+                if (!string.IsNullOrEmpty(s.path))
+                {
+                    loadedScenes[s.path] = s;
+                }
+            }
+
             var guids = AssetDatabase.FindAssets("t:Scene");
             var allPaths = new List<string>(guids.Length);
             foreach (var guid in guids)
@@ -68,7 +81,15 @@ namespace UnityMcpPlugin.Tools
             var scenes = new List<SceneEntry>(endIndex - startIndex);
             for (var i = startIndex; i < endIndex; i++)
             {
-                scenes.Add(new SceneEntry(filtered[i]));
+                var path = filtered[i];
+                if (loadedScenes.TryGetValue(path, out var scene))
+                {
+                    scenes.Add(new SceneEntry(path, scene.isLoaded, scene.isDirty, scene.path == activeScene.path));
+                }
+                else
+                {
+                    scenes.Add(new SceneEntry(path, false, false, false));
+                }
             }
 
             var truncated = endIndex < totalCount;

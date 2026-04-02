@@ -141,7 +141,10 @@ namespace UnityMcpPlugin
         [property: JsonProperty("stack_trace")] string StackTrace);
 
     internal sealed record SceneEntry(
-        [property: JsonProperty("path")] string Path);
+        [property: JsonProperty("path")] string Path,
+        [property: JsonProperty("is_loaded")] bool IsLoaded,
+        [property: JsonProperty("is_dirty")] bool IsDirty,
+        [property: JsonProperty("is_active")] bool IsActive);
 
     internal sealed record ListScenesPayload(
         [property: JsonProperty("scenes")] IReadOnlyList<SceneEntry> Scenes,
