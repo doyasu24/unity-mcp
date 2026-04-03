@@ -201,9 +201,11 @@ internal sealed class UnityBridge
                 payload = await ExecuteSyncToolAsync(
                     ToolNames.RefreshAssets, toolParams, timeoutMs, cancellationToken);
             }
-            catch (McpException ex) when (ex.Code == ErrorCodes.ReconnectTimeout)
+            catch (McpException ex) when (ex.Code is ErrorCodes.ReconnectTimeout
+                or ErrorCodes.UnityDisconnected or ErrorCodes.RequestTimeout)
             {
-                // ドメインリロードでレスポンス前に切断。Refresh は実行済み。
+                // ドメインリロードや一時的な切断でレスポンス前にエラー。Refresh は実行済みの可能性がある。
+                _logger.ZLogDebug($"RefreshAssets initial send transient error, assuming refresh executed: code={ex.Code}");
                 await EnsureEditorReadyAsync(cancellationToken);
                 payload = new JsonObject { ["refreshed"] = true, ["compiling"] = true };
             }
