@@ -26,6 +26,8 @@ graph LR
 | `open_scene` | Opens a scene in the Unity Editor. |
 | `save_scene` | Saves the current scene or a specific open scene. |
 | `create_scene` | Creates a new scene and saves it to the specified path. |
+| `unload_scenes` | Snapshots the open-scene setup and unloads all scenes (opens an empty scene) so an open scene's `.unity` file can be edited on disk without triggering Unity's "scene modified externally" dialog. Returns the setup for `restore_scenes`. |
+| `restore_scenes` | Restores the scene setup captured by `unload_scenes`, reopening the original scenes from disk (picking up external edits). |
 | **Scene / Prefab Hierarchy & Components** | |
 | `get_hierarchy` | Returns the scene's or a Prefab asset's GameObject tree with component type names. Supports pagination via `offset`. Pass `prefab_path` for Prefab mode. |
 | `get_component_info` | Returns serialized field values of a specific component on a scene or Prefab GameObject. |

@@ -153,6 +153,18 @@ public sealed class ToolCatalogTests
         AssertToolExists(tools, ToolNames.OpenScene);
         AssertToolExists(tools, ToolNames.SaveScene);
         AssertToolExists(tools, ToolNames.CreateScene);
+        AssertToolExists(tools, ToolNames.UnloadScenes);
+        AssertToolExists(tools, ToolNames.RestoreScenes);
+    }
+
+    [Fact]
+    public void BuildMcpTools_RestoreScenesSchema_RequiresScenes()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var restoreScenes = AssertToolExists(tools, ToolNames.RestoreScenes);
+        var schema = Assert.IsType<JsonObject>(restoreScenes["inputSchema"]);
+        var required = Assert.IsType<JsonArray>(schema["required"]);
+        Assert.Contains("scenes", required.Select(n => n?.GetValue<string>()));
     }
 
     [Fact]
@@ -173,6 +185,8 @@ public sealed class ToolCatalogTests
         AssertSyncToolWithoutCancel(tools, ToolNames.OpenScene);
         AssertSyncToolWithoutCancel(tools, ToolNames.SaveScene);
         AssertSyncToolWithoutCancel(tools, ToolNames.CreateScene);
+        AssertSyncToolWithoutCancel(tools, ToolNames.UnloadScenes);
+        AssertSyncToolWithoutCancel(tools, ToolNames.RestoreScenes);
     }
 
     [Fact]

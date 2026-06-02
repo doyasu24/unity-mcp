@@ -788,6 +788,26 @@ internal sealed class UnityBridge
         return new CreateSceneResult(payload);
     }
 
+    public async Task<UnloadScenesResult> UnloadScenesAsync(CancellationToken cancellationToken)
+    {
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.UnloadScenes);
+        var payload = await ExecuteSyncToolAsync(ToolNames.UnloadScenes, new JsonObject(), timeoutMs, cancellationToken);
+        return new UnloadScenesResult(payload);
+    }
+
+    public async Task<RestoreScenesResult> RestoreScenesAsync(RestoreScenesRequest request, CancellationToken cancellationToken)
+    {
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.RestoreScenes);
+        var parameters = new JsonObject
+        {
+            ["scenes"] = request.Scenes.DeepClone(),
+        };
+        var payload = await ExecuteSyncToolAsync(ToolNames.RestoreScenes, parameters, timeoutMs, cancellationToken);
+        return new RestoreScenesResult(payload);
+    }
+
     public async Task<FindAssetsResult> FindAssetsAsync(FindAssetsRequest request, CancellationToken cancellationToken)
     {
         await EnsureEditorReadyAsync(cancellationToken);

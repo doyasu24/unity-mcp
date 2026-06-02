@@ -31,6 +31,18 @@ internal static class Constants
     public const int CompileGraceTimeoutMs = 90000;
     public const string McpSessionHeader = "Mcp-Session-Id";
     public const string DefaultMcpProtocolVersion = "2025-03-26";
+
+    /// <summary>
+    /// initialize レスポンスの instructions に載せるサーバ説明文。接続したクライアントへ
+    /// 自動注入されるため、利用者のエージェントへシーン編集フローを伝える主要な経路になる。
+    /// </summary>
+    public const string ServerInstructions =
+        "unity-mcp bridges the Unity Editor. Most changes should go through MCP tools " +
+        "(manage_game_object, manage_component, etc.), which apply in-process.\n\n" +
+        "IMPORTANT - direct .unity file edits: editing a scene file on disk while it is " +
+        "open in the Editor triggers Unity's blocking 'scene modified externally' dialog. " +
+        "Use: save_scene (if dirty) -> unload_scenes (keep 'scenes') -> edit + refresh_assets " +
+        "-> restore_scenes(scenes). Needed only for direct file edits, not MCP tool edits.";
 }
 
 internal static class ErrorCodes

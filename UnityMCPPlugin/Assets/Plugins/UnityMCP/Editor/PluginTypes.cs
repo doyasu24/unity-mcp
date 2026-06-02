@@ -163,6 +163,17 @@ namespace UnityMcpPlugin
     internal sealed record CreateScenePayload(
         [property: JsonProperty("path")] string Path);
 
+    internal sealed record SceneSetupEntry(
+        [property: JsonProperty("path")] string Path,
+        [property: JsonProperty("is_active")] bool IsActive,
+        [property: JsonProperty("is_loaded")] bool IsLoaded);
+
+    internal sealed record UnloadScenesPayload(
+        [property: JsonProperty("scenes")] IReadOnlyList<SceneSetupEntry> Scenes);
+
+    internal sealed record RestoreScenesPayload(
+        [property: JsonProperty("scenes")] IReadOnlyList<SceneSetupEntry> Scenes);
+
     internal sealed record AssetEntry(
         [property: JsonProperty("path")] string Path,
         [property: JsonProperty("type")] string Type,

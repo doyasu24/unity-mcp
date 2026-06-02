@@ -35,6 +35,8 @@ namespace UnityMcpPlugin
         internal const string ManageBuild = "manage_build";
         internal const string ManagePlayerPrefs = "manage_player_prefs";
         internal const string TapUIElement = "tap_ui_element";
+        internal const string UnloadScenes = "unload_scenes";
+        internal const string RestoreScenes = "restore_scenes";
     }
 
     internal static class ToolLimits

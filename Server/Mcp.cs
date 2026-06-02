@@ -90,6 +90,8 @@ internal sealed class McpToolService
             ToolNames.OpenScene => (await _unityBridge.OpenSceneAsync(ParseOpenSceneRequest(arguments), cancellationToken)).Payload,
             ToolNames.SaveScene => (await _unityBridge.SaveSceneAsync(ParseSaveSceneRequest(arguments), cancellationToken)).Payload,
             ToolNames.CreateScene => (await _unityBridge.CreateSceneAsync(ParseCreateSceneRequest(arguments), cancellationToken)).Payload,
+            ToolNames.UnloadScenes => (await _unityBridge.UnloadScenesAsync(cancellationToken)).Payload,
+            ToolNames.RestoreScenes => (await _unityBridge.RestoreScenesAsync(ParseRestoreScenesRequest(arguments), cancellationToken)).Payload,
             ToolNames.FindAssets => (await _unityBridge.FindAssetsAsync(ParseFindAssetsRequest(arguments), cancellationToken)).Payload,
             ToolNames.InstantiatePrefab => (await _unityBridge.InstantiatePrefabAsync(ParseInstantiatePrefabRequest(arguments), cancellationToken)).Payload,
             ToolNames.GetAssetInfo => (await _unityBridge.GetAssetInfoAsync(ParseGetAssetInfoRequest(arguments), cancellationToken)).Payload,
@@ -636,6 +638,17 @@ internal sealed class McpToolService
         }
 
         return new CreateSceneRequest(path, setup);
+    }
+
+    private static RestoreScenesRequest ParseRestoreScenesRequest(JsonObject arguments)
+    {
+        if (arguments["scenes"] is not JsonArray scenes || scenes.Count == 0)
+        {
+            throw new McpException(ErrorCodes.InvalidParams,
+                "scenes is required (pass the array returned by unload_scenes).");
+        }
+
+        return new RestoreScenesRequest(scenes);
     }
 
     private static FindAssetsRequest ParseFindAssetsRequest(JsonObject arguments)
@@ -1898,7 +1911,12 @@ internal sealed class McpHttpHandler
         var parameters = JsonHelpers.AsObjectOrEmpty(request["params"]);
         var protocolVersion = JsonHelpers.GetString(parameters, "protocolVersion") ?? Constants.DefaultMcpProtocolVersion;
 
-        var result = new JsonObject
+        return new ProcessResult(JsonRpc.Result(id, BuildInitializeResult(protocolVersion)), activeSessionId);
+    }
+
+    internal static JsonObject BuildInitializeResult(string protocolVersion)
+    {
+        return new JsonObject
         {
             ["protocolVersion"] = protocolVersion,
             ["capabilities"] = new JsonObject
@@ -1913,9 +1931,8 @@ internal sealed class McpHttpHandler
                 ["name"] = Constants.ServerName,
                 ["version"] = Constants.ServerVersion,
             },
+            ["instructions"] = Constants.ServerInstructions,
         };
-
-        return new ProcessResult(JsonRpc.Result(id, result), activeSessionId);
     }
 
     private static ProcessResult HandleToolsList(JsonNode? id)

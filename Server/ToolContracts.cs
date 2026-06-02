@@ -44,6 +44,8 @@ internal static class ToolNames
     public const string ManageBuild = "manage_build";
     public const string ManagePlayerPrefs = "manage_player_prefs";
     public const string TapUIElement = "tap_ui_element";
+    public const string UnloadScenes = "unload_scenes";
+    public const string RestoreScenes = "restore_scenes";
 }
 
 internal static class ToolLimits
@@ -316,6 +318,12 @@ internal sealed record SaveSceneResult(JsonNode Payload);
 internal sealed record CreateSceneRequest(string Path, string Setup);
 
 internal sealed record CreateSceneResult(JsonNode Payload);
+
+internal sealed record UnloadScenesResult(JsonNode Payload);
+
+internal sealed record RestoreScenesRequest(JsonArray Scenes);
+
+internal sealed record RestoreScenesResult(JsonNode Payload);
 
 internal sealed record FindAssetsRequest(string Filter, string[]? SearchInFolders, int MaxResults, int Offset);
 

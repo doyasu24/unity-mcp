@@ -448,6 +448,49 @@ internal static class ToolCatalog
                 ["required"] = new JsonArray("path"),
                 ["additionalProperties"] = false,
             }),
+        [ToolNames.UnloadScenes] = new(
+            ToolNames.UnloadScenes,
+            30000,
+            60000,
+            false,
+            "Snapshots the currently open scene setup and unloads all scenes (opens an empty scene). " +
+            "Call this BEFORE directly editing an open scene's .unity file on disk: with the scene detached from the Editor, " +
+            "editing the file and calling refresh_assets will NOT trigger the blocking 'scene modified externally' dialog. " +
+            "Returns 'scenes' (the open-scene setup); pass it to restore_scenes afterward to reopen the original configuration. " +
+            "Errors if any open scene is unsaved (call save_scene first) or untitled.",
+            EmptyObjectSchema()),
+        [ToolNames.RestoreScenes] = new(
+            ToolNames.RestoreScenes,
+            30000,
+            60000,
+            false,
+            "Restores the scene setup captured by unload_scenes, reopening the original scenes from disk " +
+            "(so external edits made while unloaded are picked up). Pass the 'scenes' array returned by unload_scenes.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["scenes"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["description"] = "The scene setup returned by unload_scenes.",
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["path"] = new JsonObject { ["type"] = "string" },
+                                ["is_active"] = new JsonObject { ["type"] = "boolean" },
+                                ["is_loaded"] = new JsonObject { ["type"] = "boolean" },
+                            },
+                            ["required"] = new JsonArray("path"),
+                        },
+                    },
+                },
+                ["required"] = new JsonArray("scenes"),
+                ["additionalProperties"] = false,
+            }),
         [ToolNames.FindAssets] = new(
             ToolNames.FindAssets,
             10000,
