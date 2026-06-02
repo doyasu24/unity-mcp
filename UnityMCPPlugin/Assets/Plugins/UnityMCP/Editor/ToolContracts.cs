@@ -34,6 +34,7 @@ namespace UnityMcpPlugin
         internal const string ManagePrefab = "manage_prefab";
         internal const string ManageBuild = "manage_build";
         internal const string ManagePlayerPrefs = "manage_player_prefs";
+        internal const string TapUIElement = "tap_ui_element";
     }
 
     internal static class ToolLimits

@@ -77,6 +77,21 @@ internal static class JsonHelpers
         return null;
     }
 
+    public static double? GetDouble(JsonObject obj, string propertyName)
+    {
+        if (!obj.TryGetPropertyValue(propertyName, out var value) || value is null)
+        {
+            return null;
+        }
+
+        if (value is JsonValue jsonValue && jsonValue.TryGetValue<double>(out var number))
+        {
+            return number;
+        }
+
+        return null;
+    }
+
     public static ulong? GetUlong(JsonObject obj, string propertyName)
     {
         if (!obj.TryGetPropertyValue(propertyName, out var value) || value is null)

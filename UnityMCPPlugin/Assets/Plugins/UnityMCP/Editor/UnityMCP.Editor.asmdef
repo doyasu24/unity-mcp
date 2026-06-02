@@ -1,7 +1,9 @@
 {
   "name": "UnityMCP.Editor",
   "rootNamespace": "UnityMcpPlugin",
-  "references": [],
+  "references": [
+    "UnityEngine.UI"
+  ],
   "includePlatforms": [
     "Editor"
   ],

@@ -167,6 +167,31 @@ internal sealed class UnityBridge
         return new GetPlayModeStateResult(payload);
     }
 
+    public async Task<TapUIElementResult> TapUIElementAsync(TapUIElementRequest request, CancellationToken cancellationToken)
+    {
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.TapUIElement);
+
+        var parameters = new JsonObject();
+        if (!string.IsNullOrEmpty(request.TargetPath))
+        {
+            parameters["target_path"] = request.TargetPath;
+        }
+
+        if (request.X.HasValue)
+        {
+            parameters["x"] = request.X.Value;
+        }
+
+        if (request.Y.HasValue)
+        {
+            parameters["y"] = request.Y.Value;
+        }
+
+        var payload = await ExecuteSyncToolAsync(ToolNames.TapUIElement, parameters, timeoutMs, cancellationToken);
+        return new TapUIElementResult(payload);
+    }
+
     public async Task<ClearConsoleResult> ClearConsoleAsync(CancellationToken cancellationToken)
     {
         await EnsureEditorReadyAsync(cancellationToken);

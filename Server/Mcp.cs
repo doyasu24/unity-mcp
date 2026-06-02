@@ -79,6 +79,7 @@ internal sealed class McpToolService
             ToolNames.ClearConsole => (await _unityBridge.ClearConsoleAsync(cancellationToken)).Payload,
             ToolNames.RefreshAssets => (await _unityBridge.RefreshAssetsAsync(JsonHelpers.GetBool(arguments, "force") ?? false, cancellationToken)).Payload,
             ToolNames.ControlPlayMode => (await _unityBridge.ControlPlayModeAsync(ParseControlPlayModeRequest(arguments), cancellationToken)).Payload,
+            ToolNames.TapUIElement => (await _unityBridge.TapUIElementAsync(ParseTapUIElementRequest(arguments), cancellationToken)).Payload,
             ToolNames.RunTests => (await _unityBridge.RunTestsAsync(ParseRunTestsRequest(arguments), cancellationToken)).Payload,
             ToolNames.GetHierarchy => await ExecuteGetHierarchyAsync(arguments, cancellationToken),
             ToolNames.GetComponentInfo => await ExecuteGetComponentInfoAsync(arguments, cancellationToken),
@@ -324,6 +325,49 @@ internal sealed class McpToolService
         }
 
         return new ControlPlayModeRequest(action!);
+    }
+
+    private static TapUIElementRequest ParseTapUIElementRequest(JsonObject arguments)
+    {
+        // 排他バリデーションはプロパティの「存在」で判定する（値のパース可否ではない）。
+        var hasPath = arguments.ContainsKey("target_path");
+        var hasX = arguments.ContainsKey("x");
+        var hasY = arguments.ContainsKey("y");
+
+        var targetPath = JsonHelpers.GetString(arguments, "target_path");
+        var x = JsonHelpers.GetDouble(arguments, "x");
+        var y = JsonHelpers.GetDouble(arguments, "y");
+
+        if (hasPath)
+        {
+            if (hasX || hasY)
+            {
+                throw new McpException(
+                    ErrorCodes.InvalidParams,
+                    "target_path is mutually exclusive with x/y. Specify exactly one targeting mode.");
+            }
+
+            if (string.IsNullOrWhiteSpace(targetPath))
+            {
+                throw new McpException(ErrorCodes.InvalidParams, "target_path must be a non-empty string.");
+            }
+        }
+        else
+        {
+            if (!hasX || !hasY)
+            {
+                throw new McpException(
+                    ErrorCodes.InvalidParams,
+                    "Specify either target_path OR both x and y (exactly one targeting mode is required).");
+            }
+
+            if (!x.HasValue || !y.HasValue)
+            {
+                throw new McpException(ErrorCodes.InvalidParams, "x and y must be numbers.");
+            }
+        }
+
+        return new TapUIElementRequest(targetPath, x, y);
     }
 
     private static bool HasPrefabPath(JsonObject arguments)

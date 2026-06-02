@@ -274,6 +274,14 @@ namespace UnityMcpPlugin
         [property: JsonProperty("source")] string Source,
         [property: JsonProperty("inline_image")] string InlineImage);
 
+    internal sealed record TapUIElementPayload(
+        [property: JsonProperty("tapped")] bool Tapped,
+        [property: JsonProperty("target_path")] string TargetPath,
+        [property: JsonProperty("screen_x")] float ScreenX,
+        [property: JsonProperty("screen_y")] float ScreenY,
+        [property: JsonProperty("event_system")] string EventSystem,
+        [property: JsonProperty("dispatched_handlers")] IReadOnlyList<string> DispatchedHandlers);
+
 
     // --- Assembly Definition payloads ---
 

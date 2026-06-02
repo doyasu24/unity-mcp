@@ -42,6 +42,8 @@ graph LR
 | `manage_build` | Manages Unity build pipeline: get/set build settings, add/remove/reorder scenes, and execute builds. |
 | **Screenshot** | |
 | `capture_screenshot` | Captures a screenshot from Game View or Scene View. Returns the image inline (base64 PNG) so the LLM can see it directly, and also saves a copy to `<project>/Screenshots/`. |
+| **Runtime UI Interaction** | |
+| `tap_ui_element` | Taps a uGUI element in the running game (Play Mode) to trigger its click handler (e.g. screen transitions). Dispatches real pointer events through the EventSystem. Target by hierarchy path (`target_path`) or screen coordinates (`x`/`y`). |
 
 ## Pagination
 

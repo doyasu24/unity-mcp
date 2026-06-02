@@ -135,6 +135,37 @@ internal static class ToolCatalog
                 ["required"] = new JsonArray("action"),
                 ["additionalProperties"] = false,
             }),
+        [ToolNames.TapUIElement] = new(
+            ToolNames.TapUIElement,
+            10000,
+            30000,
+            false,
+            "Taps a uGUI element in the running game (Play Mode) to trigger its click handler (e.g. screen transitions). "
+            + "Dispatches real pointer events through the EventSystem (pointerEnter/Down/Up/Click). "
+            + "Specify either target_path (hierarchy path/name) OR both x and y (screen coordinates). Requires Play Mode and an EventSystem.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["target_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Hierarchy path or name of the uGUI element to tap (e.g. '/Canvas/SettingsPanel/CloseButton'). Mutually exclusive with x/y.",
+                    },
+                    ["x"] = new JsonObject
+                    {
+                        ["type"] = "number",
+                        ["description"] = "Screen X coordinate (pixels) for hit-testing the topmost UI element. Requires y. Mutually exclusive with target_path.",
+                    },
+                    ["y"] = new JsonObject
+                    {
+                        ["type"] = "number",
+                        ["description"] = "Screen Y coordinate (pixels) for hit-testing the topmost UI element. Requires x. Mutually exclusive with target_path.",
+                    },
+                },
+                ["additionalProperties"] = false,
+            }),
         [ToolNames.RunTests] = new(
             ToolNames.RunTests,
             300000,

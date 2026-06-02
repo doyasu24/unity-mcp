@@ -43,6 +43,7 @@ internal static class ToolNames
     public const string ManagePrefab = "manage_prefab";
     public const string ManageBuild = "manage_build";
     public const string ManagePlayerPrefs = "manage_player_prefs";
+    public const string TapUIElement = "tap_ui_element";
 }
 
 internal static class ToolLimits
@@ -261,6 +262,10 @@ internal sealed record ClearConsoleResult(JsonNode Payload);
 internal sealed record RefreshAssetsResult(JsonNode Payload);
 
 internal sealed record ControlPlayModeResult(JsonNode Payload);
+
+internal sealed record TapUIElementRequest(string? TargetPath, double? X, double? Y);
+
+internal sealed record TapUIElementResult(JsonNode Payload);
 
 internal sealed record RunTestsResult(JsonNode Payload);
 

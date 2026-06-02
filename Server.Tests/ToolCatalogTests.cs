@@ -577,6 +577,37 @@ public sealed class ToolCatalogTests
         Assert.True(metadata.MayTriggerRecompile);
     }
 
+    [Fact]
+    public void BuildMcpTools_ContainsTapUIElement()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        AssertToolExists(tools, ToolNames.TapUIElement);
+    }
+
+    [Fact]
+    public void BuildMcpTools_TapUIElementSchema_HasTargetingProperties_NoRequired()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.TapUIElement);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var properties = Assert.IsType<JsonObject>(schema["properties"]);
+
+        Assert.Equal("string", Assert.IsType<JsonObject>(properties["target_path"])["type"]?.GetValue<string>());
+        Assert.Equal("number", Assert.IsType<JsonObject>(properties["x"])["type"]?.GetValue<string>());
+        Assert.Equal("number", Assert.IsType<JsonObject>(properties["y"])["type"]?.GetValue<string>());
+
+        // どちらか一方必須の排他バリデーションは Mcp 側で行うため schema の required は持たない
+        Assert.False(schema.ContainsKey("required"));
+        Assert.False(schema["additionalProperties"]?.GetValue<bool>());
+    }
+
+    [Fact]
+    public void BuildUnityCapabilityTools_ContainsTapUIElementAsSyncWithoutCancel()
+    {
+        var tools = ToolCatalog.BuildUnityCapabilityTools();
+        AssertSyncToolWithoutCancel(tools, ToolNames.TapUIElement);
+    }
+
     private static void AssertSyncToolWithoutCancel(JsonArray tools, string toolName)
     {
         var tool = AssertToolExists(tools, toolName);
