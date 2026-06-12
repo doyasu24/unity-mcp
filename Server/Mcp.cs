@@ -92,6 +92,8 @@ internal sealed class McpToolService
             ToolNames.CreateScene => (await _unityBridge.CreateSceneAsync(ParseCreateSceneRequest(arguments), cancellationToken)).Payload,
             ToolNames.UnloadScenes => (await _unityBridge.UnloadScenesAsync(cancellationToken)).Payload,
             ToolNames.RestoreScenes => (await _unityBridge.RestoreScenesAsync(ParseRestoreScenesRequest(arguments), cancellationToken)).Payload,
+            ToolNames.ExecuteMenuItem => (await _unityBridge.ExecuteMenuItemAsync(ParseExecuteMenuItemRequest(arguments), cancellationToken)).Payload,
+            ToolNames.ListMenuItems => (await _unityBridge.ListMenuItemsAsync(ParseListMenuItemsRequest(arguments), cancellationToken)).Payload,
             ToolNames.FindAssets => (await _unityBridge.FindAssetsAsync(ParseFindAssetsRequest(arguments), cancellationToken)).Payload,
             ToolNames.InstantiatePrefab => (await _unityBridge.InstantiatePrefabAsync(ParseInstantiatePrefabRequest(arguments), cancellationToken)).Payload,
             ToolNames.GetAssetInfo => (await _unityBridge.GetAssetInfoAsync(ParseGetAssetInfoRequest(arguments), cancellationToken)).Payload,
@@ -448,6 +450,48 @@ internal sealed class McpToolService
         }
 
         return new ListScenesRequest(namePattern, maxResults, offset);
+    }
+
+    private static ExecuteMenuItemRequest ParseExecuteMenuItemRequest(JsonObject arguments)
+    {
+        var menuPath = JsonHelpers.GetString(arguments, "menu_path");
+        if (string.IsNullOrWhiteSpace(menuPath))
+        {
+            throw new McpException(ErrorCodes.InvalidParams, "menu_path is required");
+        }
+
+        return new ExecuteMenuItemRequest(menuPath!);
+    }
+
+    private static ListMenuItemsRequest ParseListMenuItemsRequest(JsonObject arguments)
+    {
+        var pattern = JsonHelpers.GetString(arguments, "pattern");
+        var source = JsonHelpers.GetString(arguments, "source");
+        if (source is not null && source is not ("project" or "package" or "builtin"))
+        {
+            throw new McpException(ErrorCodes.InvalidParams,
+                "source must be one of: project, package, builtin",
+                new JsonObject { ["source"] = source });
+        }
+        var includeBlocked = JsonHelpers.GetBool(arguments, "include_blocked") ?? false;
+
+        var maxResults = JsonHelpers.GetInt(arguments, "max_results") ?? ListMenuItemsLimits.MaxResultsDefault;
+        if (maxResults is < 1 or > ListMenuItemsLimits.MaxResultsMax)
+        {
+            throw new McpException(
+                ErrorCodes.InvalidParams,
+                $"max_results must be between 1 and {ListMenuItemsLimits.MaxResultsMax}",
+                new JsonObject { ["max_results"] = maxResults });
+        }
+
+        var offset = JsonHelpers.GetInt(arguments, "offset") ?? 0;
+        if (offset < 0)
+        {
+            throw new McpException(ErrorCodes.InvalidParams, "offset must be >= 0",
+                new JsonObject { ["offset"] = offset });
+        }
+
+        return new ListMenuItemsRequest(pattern, source, includeBlocked, maxResults, offset);
     }
 
     private static GetSceneHierarchyRequest ParseGetSceneHierarchyRequest(JsonObject arguments)

@@ -18,10 +18,18 @@ namespace UnityMcpPlugin.Tests
         [Test]
         public void DiscoverAndRegister_FindsAllAutoDiscoverableTools()
         {
-            // Tools/ 配下の IToolHandler 実装 35 個のうち、コンストラクタ引数が必要な
-            // GetEditorStateTool は自動発見されないため 34 個が登録される。
+            // Tools/ 配下の IToolHandler 実装 37 個のうち、コンストラクタ引数が必要な
+            // GetEditorStateTool は自動発見されないため 36 個が登録される。
             _registry.DiscoverAndRegister();
-            Assert.That(_registry.Count, Is.EqualTo(34));
+            Assert.That(_registry.Count, Is.EqualTo(36));
+        }
+
+        [Test]
+        public void DiscoverAndRegister_RegistersMenuTools()
+        {
+            _registry.DiscoverAndRegister();
+            Assert.That(_registry.TryGetHandler(ToolNames.ExecuteMenuItem, out _), Is.True);
+            Assert.That(_registry.TryGetHandler(ToolNames.ListMenuItems, out _), Is.True);
         }
 
         [Test]

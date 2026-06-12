@@ -44,19 +44,8 @@ namespace UnityMcpPlugin.Tools
                 }
             }
 
-            Regex messageRegex = null;
             var messagePattern = Payload.GetString(parameters, "message_pattern");
-            if (messagePattern != null)
-            {
-                try
-                {
-                    messageRegex = new Regex(messagePattern, RegexOptions.IgnoreCase);
-                }
-                catch (System.ArgumentException)
-                {
-                    throw new PluginException("ERR_INVALID_PARAMS", $"Invalid message_pattern regex: {messagePattern}");
-                }
-            }
+            Regex messageRegex = messagePattern != null ? UserRegex.Compile(messagePattern, "message_pattern") : null;
 
             var stackTraceLines = Payload.GetInt(parameters, "stack_trace_lines") ?? ToolLimits.ReadConsoleDefaultStackTraceLines;
             if (stackTraceLines < 0)
@@ -71,7 +60,15 @@ namespace UnityMcpPlugin.Tools
                 throw new PluginException("ERR_INVALID_PARAMS", "offset must be >= 0");
             }
 
-            return LogBuffer.Read(maxEntries, logTypes, messageRegex, stackTraceLines, deduplicate, offset);
+            try
+            {
+                return LogBuffer.Read(maxEntries, logTypes, messageRegex, stackTraceLines, deduplicate, offset);
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                throw new PluginException("ERR_INVALID_PARAMS",
+                    "message_pattern regex evaluation timed out (possible catastrophic backtracking).");
+            }
         }
     }
 }

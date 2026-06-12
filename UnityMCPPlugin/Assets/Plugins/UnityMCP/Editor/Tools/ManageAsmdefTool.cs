@@ -61,18 +61,7 @@ namespace UnityMcpPlugin.Tools
             if (maxResults > ManageAsmdefLimits.MaxResultsMax) maxResults = ManageAsmdefLimits.MaxResultsMax;
             if (offset < 0) offset = 0;
 
-            Regex nameRegex = null;
-            if (!string.IsNullOrEmpty(namePattern))
-            {
-                try
-                {
-                    nameRegex = new Regex(namePattern, RegexOptions.IgnoreCase);
-                }
-                catch
-                {
-                    throw new PluginException("ERR_INVALID_PARAMS", $"Invalid regex pattern: {namePattern}");
-                }
-            }
+            Regex nameRegex = !string.IsNullOrEmpty(namePattern) ? UserRegex.Compile(namePattern, "name_pattern") : null;
 
             // AssetDatabase から全 asmdef を列挙（CompilationPipeline はコンパイル可能なもののみのため不使用）
             var guids = AssetDatabase.FindAssets("t:AssemblyDefinitionAsset");
@@ -98,7 +87,7 @@ namespace UnityMcpPlugin.Tools
                     var json = File.ReadAllText(asmdefPath);
                     var data = JsonUtility.FromJson<AsmdefData>(json);
 
-                    if (nameRegex != null && !nameRegex.IsMatch(data.name))
+                    if (nameRegex != null && !UserRegex.IsMatch(nameRegex, data.name, "name_pattern"))
                     {
                         continue;
                     }

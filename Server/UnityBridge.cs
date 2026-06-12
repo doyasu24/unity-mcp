@@ -808,6 +808,40 @@ internal sealed class UnityBridge
         return new RestoreScenesResult(payload);
     }
 
+    public async Task<ExecuteMenuItemResult> ExecuteMenuItemAsync(ExecuteMenuItemRequest request, CancellationToken cancellationToken)
+    {
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ExecuteMenuItem);
+        var parameters = new JsonObject
+        {
+            ["menu_path"] = request.MenuPath,
+        };
+        var payload = await ExecuteSyncToolAsync(ToolNames.ExecuteMenuItem, parameters, timeoutMs, cancellationToken);
+        return new ExecuteMenuItemResult(payload);
+    }
+
+    public async Task<ListMenuItemsResult> ListMenuItemsAsync(ListMenuItemsRequest request, CancellationToken cancellationToken)
+    {
+        await EnsureEditorReadyAsync(cancellationToken);
+        var timeoutMs = ToolCatalog.DefaultTimeoutMs(ToolNames.ListMenuItems);
+        var parameters = new JsonObject
+        {
+            ["include_blocked"] = request.IncludeBlocked,
+            ["max_results"] = request.MaxResults,
+            ["offset"] = request.Offset,
+        };
+        if (request.Pattern is not null)
+        {
+            parameters["pattern"] = request.Pattern;
+        }
+        if (request.Source is not null)
+        {
+            parameters["source"] = request.Source;
+        }
+        var payload = await ExecuteSyncToolAsync(ToolNames.ListMenuItems, parameters, timeoutMs, cancellationToken);
+        return new ListMenuItemsResult(payload);
+    }
+
     public async Task<FindAssetsResult> FindAssetsAsync(FindAssetsRequest request, CancellationToken cancellationToken)
     {
         await EnsureEditorReadyAsync(cancellationToken);

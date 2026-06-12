@@ -491,6 +491,72 @@ internal static class ToolCatalog
                 ["required"] = new JsonArray("scenes"),
                 ["additionalProperties"] = false,
             }),
+        [ToolNames.ExecuteMenuItem] = new(
+            ToolNames.ExecuteMenuItem,
+            10000,
+            30000,
+            false,
+            "Executes a Unity Editor menu item.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["menu_path"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Full menu path to execute (e.g. 'GameObject/Create Empty', 'Assets/Refresh').",
+                    },
+                },
+                ["required"] = new JsonArray("menu_path"),
+                ["additionalProperties"] = false,
+            }),
+        [ToolNames.ListMenuItems] = new(
+            ToolNames.ListMenuItems,
+            10000,
+            30000,
+            false,
+            "Lists Unity Editor menu items.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["pattern"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Filter menu paths by regex (case-insensitive). Omit to return all.",
+                    },
+                    ["source"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = new JsonArray("project", "package", "builtin"),
+                        ["description"] = "Filter by definition origin: 'project' (your own scripts under Assets/), 'package' (under Packages/), or 'builtin' (Unity precompiled). Omit to return all sources.",
+                    },
+                    ["include_blocked"] = new JsonObject
+                    {
+                        ["type"] = "boolean",
+                        ["default"] = false,
+                        ["description"] = "Include blocking menus (modal dialogs / quit) in the result, marked blocked=true. Default: false (excluded).",
+                    },
+                    ["max_results"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 1,
+                        ["maximum"] = ListMenuItemsLimits.MaxResultsMax,
+                        ["default"] = ListMenuItemsLimits.MaxResultsDefault,
+                        ["description"] = "Maximum number of items to return.",
+                    },
+                    ["offset"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 0,
+                        ["default"] = 0,
+                        ["description"] = "Number of matching items to skip. Use next_offset from truncated responses.",
+                    },
+                },
+                ["additionalProperties"] = false,
+            }),
         [ToolNames.FindAssets] = new(
             ToolNames.FindAssets,
             10000,

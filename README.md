@@ -46,6 +46,9 @@ graph LR
 | `capture_screenshot` | Captures a screenshot from Game View or Scene View. Returns the image inline (base64 PNG) so the LLM can see it directly, and also saves a copy to `<project>/Screenshots/`. |
 | **Runtime UI Interaction** | |
 | `tap_ui_element` | Taps a uGUI element in the running game (Play Mode) to trigger its click handler (e.g. screen transitions). Dispatches real pointer events through the EventSystem. Target by hierarchy path (`target_path`) or screen coordinates (`x`/`y`). |
+| **Editor Menu** | |
+| `execute_menu_item` | Executes an Editor menu item by path (e.g. `GameObject/Create Empty`). Blocking menus (modal/quit) run too and are flagged `blocking=true`; a truly modal one can freeze the bridge until dismissed. Refused only while compiling/importing. |
+| `list_menu_items` | Lists Editor menu items. Each reports `source` (project/package/builtin) and `blocked`. Filter by `pattern` (regex) or `source`; set `include_blocked` to include blocking menus. |
 
 ## Pagination
 

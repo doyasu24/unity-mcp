@@ -37,6 +37,8 @@ namespace UnityMcpPlugin
         internal const string TapUIElement = "tap_ui_element";
         internal const string UnloadScenes = "unload_scenes";
         internal const string RestoreScenes = "restore_scenes";
+        internal const string ExecuteMenuItem = "execute_menu_item";
+        internal const string ListMenuItems = "list_menu_items";
     }
 
     internal static class ToolLimits

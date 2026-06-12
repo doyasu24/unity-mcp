@@ -35,18 +35,7 @@ namespace UnityMcpPlugin.Tools
             }
 
             var namePattern = Payload.GetString(parameters, "name_pattern");
-            Regex nameRegex = null;
-            if (namePattern != null)
-            {
-                try
-                {
-                    nameRegex = new Regex(namePattern, RegexOptions.IgnoreCase);
-                }
-                catch (System.ArgumentException)
-                {
-                    throw new PluginException("ERR_INVALID_PARAMS", $"Invalid name_pattern regex: {namePattern}");
-                }
-            }
+            Regex nameRegex = namePattern != null ? UserRegex.Compile(namePattern, "name_pattern") : null;
 
             var filtered = new List<string>();
             foreach (var path in allPaths)
@@ -54,7 +43,7 @@ namespace UnityMcpPlugin.Tools
                 if (nameRegex != null)
                 {
                     var fileName = System.IO.Path.GetFileNameWithoutExtension(path);
-                    if (!nameRegex.IsMatch(fileName)) continue;
+                    if (!UserRegex.IsMatch(nameRegex, fileName, "name_pattern")) continue;
                 }
 
                 filtered.Add(path);

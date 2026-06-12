@@ -46,6 +46,8 @@ internal static class ToolNames
     public const string TapUIElement = "tap_ui_element";
     public const string UnloadScenes = "unload_scenes";
     public const string RestoreScenes = "restore_scenes";
+    public const string ExecuteMenuItem = "execute_menu_item";
+    public const string ListMenuItems = "list_menu_items";
 }
 
 internal static class ToolLimits
@@ -247,6 +249,12 @@ internal static class FindAssetsLimits
     public const int MaxResultsDefault = 100;
 }
 
+internal static class ListMenuItemsLimits
+{
+    public const int MaxResultsMax = 2000;
+    public const int MaxResultsDefault = 200;
+}
+
 internal sealed record ReadConsoleRequest(int MaxEntries, string[]? LogType, string? MessagePattern, int StackTraceLines, bool Deduplicate, int Offset);
 
 internal sealed record GetPlayModeStateRequest();
@@ -324,6 +332,14 @@ internal sealed record UnloadScenesResult(JsonNode Payload);
 internal sealed record RestoreScenesRequest(JsonArray Scenes);
 
 internal sealed record RestoreScenesResult(JsonNode Payload);
+
+internal sealed record ExecuteMenuItemRequest(string MenuPath);
+
+internal sealed record ExecuteMenuItemResult(JsonNode Payload);
+
+internal sealed record ListMenuItemsRequest(string? Pattern, string? Source, bool IncludeBlocked, int MaxResults, int Offset);
+
+internal sealed record ListMenuItemsResult(JsonNode Payload);
 
 internal sealed record FindAssetsRequest(string Filter, string[]? SearchInFolders, int MaxResults, int Offset);
 

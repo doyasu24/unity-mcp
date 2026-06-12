@@ -622,6 +622,64 @@ public sealed class ToolCatalogTests
         AssertSyncToolWithoutCancel(tools, ToolNames.TapUIElement);
     }
 
+    [Fact]
+    public void BuildMcpTools_ContainsExecuteMenuItem()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        AssertToolExists(tools, ToolNames.ExecuteMenuItem);
+    }
+
+    [Fact]
+    public void BuildMcpTools_ExecuteMenuItemSchema_RequiresMenuPath()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.ExecuteMenuItem);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var properties = Assert.IsType<JsonObject>(schema["properties"]);
+
+        Assert.Equal("string", Assert.IsType<JsonObject>(properties["menu_path"])["type"]?.GetValue<string>());
+
+        var required = Assert.IsType<JsonArray>(schema["required"]);
+        Assert.Contains(required, node => string.Equals(node?.GetValue<string>(), "menu_path", StringComparison.Ordinal));
+        Assert.False(schema["additionalProperties"]?.GetValue<bool>());
+    }
+
+    [Fact]
+    public void BuildMcpTools_ContainsListMenuItems()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        AssertToolExists(tools, ToolNames.ListMenuItems);
+    }
+
+    [Fact]
+    public void BuildMcpTools_ListMenuItemsSchema_HasFilterProperties_NoRequired()
+    {
+        var tools = ToolCatalog.BuildMcpTools();
+        var tool = AssertToolExists(tools, ToolNames.ListMenuItems);
+        var schema = Assert.IsType<JsonObject>(tool["inputSchema"]);
+        var properties = Assert.IsType<JsonObject>(schema["properties"]);
+
+        Assert.Equal("string", Assert.IsType<JsonObject>(properties["pattern"])["type"]?.GetValue<string>());
+        Assert.Equal("string", Assert.IsType<JsonObject>(properties["source"])["type"]?.GetValue<string>());
+        Assert.Equal("boolean", Assert.IsType<JsonObject>(properties["include_blocked"])["type"]?.GetValue<string>());
+        Assert.Equal("integer", Assert.IsType<JsonObject>(properties["max_results"])["type"]?.GetValue<string>());
+        Assert.Equal("integer", Assert.IsType<JsonObject>(properties["offset"])["type"]?.GetValue<string>());
+
+        var sourceEnum = Assert.IsType<JsonArray>(Assert.IsType<JsonObject>(properties["source"])["enum"]);
+        Assert.Equal(new[] { "project", "package", "builtin" }, sourceEnum.Select(n => n!.GetValue<string>()));
+
+        Assert.False(schema.ContainsKey("required"));
+        Assert.False(schema["additionalProperties"]?.GetValue<bool>());
+    }
+
+    [Fact]
+    public void BuildUnityCapabilityTools_ContainsMenuToolsAsSyncWithoutCancel()
+    {
+        var tools = ToolCatalog.BuildUnityCapabilityTools();
+        AssertSyncToolWithoutCancel(tools, ToolNames.ExecuteMenuItem);
+        AssertSyncToolWithoutCancel(tools, ToolNames.ListMenuItems);
+    }
+
     private static void AssertSyncToolWithoutCancel(JsonArray tools, string toolName)
     {
         var tool = AssertToolExists(tools, toolName);
