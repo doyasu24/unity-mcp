@@ -407,6 +407,13 @@ namespace UnityMcpPlugin
                         {
                             throw;
                         }
+                        catch (PluginException ex) when (ex.Code == BridgeConnectionManager.DisconnectedErrorCode)
+                        {
+                            // ドメインリロード/切断中にツール結果を送り返せなかった場合に出る。
+                            // Server 側は ERR_UNITY_DISCONNECTED を実行済み前提として吸収するため無害。
+                            // ユーザー向けエラーにせず開発ログに留める。
+                            PluginLogger.DevWarn("Inbound message response dropped (bridge disconnected)", ("error", ex.Message));
+                        }
                         catch (Exception ex)
                         {
                             PluginLogger.UserError("Failed to process inbound message", ("error", ex.Message), ("stackTrace", ex.StackTrace));

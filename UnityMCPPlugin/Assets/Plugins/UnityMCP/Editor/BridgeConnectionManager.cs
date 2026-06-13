@@ -9,6 +9,8 @@ namespace UnityMcpPlugin
 {
     internal sealed class BridgeConnectionManager
     {
+        internal const string DisconnectedErrorCode = "ERR_UNITY_DISCONNECTED";
+
         private readonly object _gate = new();
         private readonly object _connectedEventGate = new();
         private readonly object _socketGate = new();
@@ -240,7 +242,7 @@ namespace UnityMcpPlugin
             var socket = GetCurrentSocket();
             if (socket == null || socket.State != WebSocketState.Open)
             {
-                throw new PluginException("ERR_UNITY_DISCONNECTED", "bridge socket is not connected");
+                throw new PluginException(DisconnectedErrorCode, "bridge socket is not connected");
             }
 
             var json = JsonUtil.Serialize(message);
@@ -251,7 +253,7 @@ namespace UnityMcpPlugin
             {
                 if (socket.State != WebSocketState.Open)
                 {
-                    throw new PluginException("ERR_UNITY_DISCONNECTED", "bridge socket is not connected");
+                    throw new PluginException(DisconnectedErrorCode, "bridge socket is not connected");
                 }
 
                 await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
