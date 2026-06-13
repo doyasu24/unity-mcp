@@ -296,7 +296,7 @@ internal static class ToolCatalog
             10000,
             30000,
             false,
-            "Adds, updates, removes, or reorders components on a scene or Prefab GameObject.",
+            "Adds, updates, removes, or reorders components on a scene or Prefab GameObject. To edit a Prefab asset, pass prefab_path; editing a scene Prefab instance only records an override and does not modify the asset.",
             new JsonObject
             {
                 ["type"] = "object",
