@@ -279,6 +279,92 @@ namespace UnityMcpPlugin.Tests
         }
 
         [Test]
+        public void ManageComponentTool_UpdatePrefabInstance_AddsOverrideWarning()
+        {
+            const string prefabPath = "Assets/_UnityMcpInstWarnTest.prefab";
+            try
+            {
+                var src = new GameObject("WarnRoot");
+                src.AddComponent<BoxCollider>();
+                var asset = PrefabUtility.SaveAsPrefabAsset(src, prefabPath, out var saved);
+                Object.DestroyImmediate(src);
+                Assert.That(saved, Is.True);
+
+                var instance = (GameObject)PrefabUtility.InstantiatePrefab(asset);
+                instance.name = "WarnInstance";
+                var boxIdx = System.Array.FindIndex(instance.GetComponents<Component>(), c => c is BoxCollider);
+
+                var result = new ManageComponentTool().Execute(new JObject
+                {
+                    ["action"] = "update",
+                    ["game_object_path"] = "/WarnInstance",
+                    ["index"] = boxIdx,
+                    ["fields"] = new JObject { ["m_IsTrigger"] = true }
+                }) as JObject;
+
+                Assert.That(result, Is.Not.Null);
+                Assert.That(result["prefab_instance_override"]?.Value<bool>(), Is.True);
+                Assert.That(result["prefab_asset_path"]?.Value<string>(), Is.EqualTo(prefabPath));
+                Assert.That(result["warning"], Is.Not.Null);
+            }
+            finally
+            {
+                AssetDatabase.DeleteAsset(prefabPath);
+            }
+        }
+
+        [Test]
+        public void ManageComponentTool_RemoveFromPrefabInstance_AddsOverrideWarning()
+        {
+            const string prefabPath = "Assets/_UnityMcpInstRemoveWarnTest.prefab";
+            try
+            {
+                var src = new GameObject("RemoveWarnRoot");
+                src.AddComponent<BoxCollider>();
+                var asset = PrefabUtility.SaveAsPrefabAsset(src, prefabPath, out var saved);
+                Object.DestroyImmediate(src);
+                Assert.That(saved, Is.True);
+
+                var instance = (GameObject)PrefabUtility.InstantiatePrefab(asset);
+                instance.name = "RemoveWarnInstance";
+                var boxIdx = System.Array.FindIndex(instance.GetComponents<Component>(), c => c is BoxCollider);
+
+                var result = new ManageComponentTool().Execute(new JObject
+                {
+                    ["action"] = "remove",
+                    ["game_object_path"] = "/RemoveWarnInstance",
+                    ["index"] = boxIdx
+                }) as JObject;
+
+                Assert.That(result, Is.Not.Null);
+                Assert.That(result["prefab_instance_override"]?.Value<bool>(), Is.True);
+                Assert.That(result["warning"], Is.Not.Null);
+            }
+            finally
+            {
+                AssetDatabase.DeleteAsset(prefabPath);
+            }
+        }
+
+        [Test]
+        public void ManageComponentTool_PlainSceneObject_NoOverrideWarning()
+        {
+            new GameObject("PlainWarnTarget");
+
+            var result = new ManageComponentTool().Execute(new JObject
+            {
+                ["action"] = "add",
+                ["game_object_path"] = "/PlainWarnTarget",
+                ["component_type"] = "BoxCollider",
+                ["fields"] = new JObject { ["m_IsTrigger"] = true }
+            }) as JObject;
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result["prefab_instance_override"], Is.Null);
+            Assert.That(result["warning"], Is.Null);
+        }
+
+        [Test]
         public void CrossToolHelper_GetBool_WorksCorrectly()
         {
             Assert.That(ManageGameObjectTool.GetBool(new JObject { ["active"] = true }, "active"), Is.True);

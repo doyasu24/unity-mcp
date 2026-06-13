@@ -247,6 +247,8 @@ namespace UnityMcpPlugin.Tools
                 ["index"] = index.Value
             };
 
+            AppendPrefabInstanceWarning(result, component);
+
             Undo.DestroyObjectImmediate(component);
 
             return result;
@@ -315,7 +317,7 @@ namespace UnityMcpPlugin.Tools
             var finalComponents = go.GetComponents<Component>();
             var finalIdx = Array.IndexOf(finalComponents, component);
 
-            return new JObject
+            var result = new JObject
             {
                 ["action"] = "move",
                 ["game_object_path"] = GameObjectResolver.GetHierarchyPath(go),
@@ -324,6 +326,10 @@ namespace UnityMcpPlugin.Tools
                 ["index"] = finalIdx,
                 ["previous_index"] = previousIndex
             };
+
+            AppendPrefabInstanceWarning(result, component);
+
+            return result;
         }
 
         private static void CheckRequireComponentDependency(GameObject go, Component target, Component[] components)
@@ -383,7 +389,31 @@ namespace UnityMcpPlugin.Tools
                 result["fields_skipped"] = new JArray(fieldsSkipped.ToArray());
             }
 
+            AppendPrefabInstanceWarning(result, component);
+
             return result;
+        }
+
+        /// <summary>
+        /// 対象がプレハブインスタンスの場合、編集はシーン側のオーバーライドとして保存され
+        /// プレハブアセットには反映されない。その旨を端的に結果へ付与する。
+        /// </summary>
+        private static void AppendPrefabInstanceWarning(JObject result, Component component)
+        {
+            if (!PrefabUtility.IsPartOfPrefabInstance(component))
+            {
+                return;
+            }
+
+            result["prefab_instance_override"] = true;
+
+            var assetPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(component);
+            if (!string.IsNullOrEmpty(assetPath))
+            {
+                result["prefab_asset_path"] = assetPath;
+            }
+
+            result["warning"] = "Prefab instance override; asset not modified. Use prefab_path to edit the asset.";
         }
     }
 }
